@@ -1059,20 +1059,43 @@ struct ContentView: View {
     @ViewBuilder
     private var tagsContent: some View {
         ScrollView {
-            centeredGrid {
-                ForEach(store.tags) { tag in
-                    VStack(spacing: 4) {
-                        // iOS tagGridItem parity: no gray box — big manila tag.
-                        Image(systemName: "tag.fill")
-                            .font(.system(size: 64))
-                            .foregroundStyle(Color(red: 0.784, green: 0.663, blue: 0.431))
-                            .frame(width: 187, height: 180)
-                        Text(tag.name).font(.caption).lineLimit(2).multilineTextAlignment(.center).frame(width: 187)
-                        Text("\(tag.bookCount) books").font(.caption2).foregroundStyle(.secondary)
+            if viewMode == .grid {
+                centeredGrid {
+                    ForEach(store.tags) { tag in
+                        VStack(spacing: 4) {
+                            // iOS tagGridItem parity: no gray box — big manila tag.
+                            Image(systemName: "tag.fill")
+                                .font(.system(size: 64))
+                                .foregroundStyle(Color(red: 0.784, green: 0.663, blue: 0.431))
+                                .frame(width: 187, height: 180)
+                            Text(tag.name).font(.caption).lineLimit(2).multilineTextAlignment(.center).frame(width: 187)
+                            Text("\(tag.bookCount) books").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { store.drillTag(tag) }
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture { store.drillTag(tag) }
                 }
+            } else {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(store.tags) { tag in
+                        HStack(spacing: 12) {
+                            Image(systemName: "tag.fill")
+                                .font(.system(size: 24))
+                                .foregroundStyle(Color(red: 0.784, green: 0.663, blue: 0.431))
+                                .frame(width: 32, height: 32)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(tag.name).font(.body).lineLimit(1)
+                                Text("\(tag.bookCount) books").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                        .onTapGesture { store.drillTag(tag) }
+                        Divider().padding(.leading, 56)
+                    }
+                }.padding(.vertical, 8)
             }
         }
     }

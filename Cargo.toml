@@ -3,6 +3,7 @@ members = [
     "crates/catalog-core",
     "crates/catalog-cli",
     "crates/catalog-ffi",
+    "crates/catalog-gtk",
     "crates/catalog-macos",
     # catalog-egui is FROZEN (perf: SwiftUI verdict in catalog-swift/).
     # Kept on disk as reference; re-add to members to build it.
@@ -36,3 +37,5 @@ eframe = "0.36"
 egui = "0.36"
 egui_extras = "0.36"
 rfd = "0.17"
+gtk = { package = "gtk4", version = "0.9" }
+relm4 = "0.9"
