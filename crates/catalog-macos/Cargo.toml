@@ -1,0 +1,32 @@
+[package]
+name = "catalog-macos"
+version = "0.1.0"
+edition = "2021"
+
+# NOTE: bin name differs from catalog-egui's JocalaCatalog on purpose —
+# both crates would otherwise overwrite target/debug/JocalaCatalog.
+# catalog-macos is frozen reference (AppKit attempt, shelved).
+[[bin]]
+name = "JocalaCatalogAppKit"
+path = "src/main.rs"
+
+# macOS-only UI: deps are target-gated so `cargo build --workspace`
+# keeps working on Linux/Windows. Non-macOS builds get a stub main.
+[dependencies]
+catalog-core = { path = "../catalog-core" }
+tokio = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { workspace = true }
+objc2-foundation = { workspace = true }
+# Per-class features (generated bindings are feature-gated).
+objc2-app-kit = {
+    workspace = true,
+    features = [
+        "NSApplication", "NSResponder", "NSGraphics", "NSWindow", "NSView",
+        "NSControl", "NSMenu", "NSMenuItem", "NSTextField", "NSSearchField",
+        "NSButton", "NSScrollView", "NSSplitView", "NSTableView", "NSTableColumn",
+        "NSTextView", "NSPanel", "NSImageCell", "NSImageView",
+    ],
+}
+dispatch2 = { workspace = true }

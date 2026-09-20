@@ -1,0 +1,21 @@
+[package]
+name = "catalog-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+rusqlite = { workspace = true }
+zip = { workspace = true }
+regex = { workspace = true }
+sha2 = { workspace = true }
+image = { workspace = true }
+tokio = { workspace = true }
+directories = { workspace = true }
+smb = { workspace = true }
+async-trait = { workspace = true }
+futures-util = "0.3"
+
+[dev-dependencies]

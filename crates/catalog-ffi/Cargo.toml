@@ -1,0 +1,14 @@
+[package]
+name = "catalog-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "catalog_ffi"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+catalog-core = { path = "../catalog-core" }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

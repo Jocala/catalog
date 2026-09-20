@@ -1,0 +1,16 @@
+[package]
+name = "catalog-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "catalog-cli"
+path = "src/main.rs"
+
+[dependencies]
+catalog-core = { path = "../catalog-core" }
+clap = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+rusqlite = { workspace = true }

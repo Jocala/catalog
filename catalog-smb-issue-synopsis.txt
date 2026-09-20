@@ -1,0 +1,247 @@
+JOCALA CATALOG — SMB ENETDOWN (posix 50) ISSUE SYNOPSIS
+========================================================
+Written: 2026-09-19 (night session, times EDT)
+Author: Muse Spark session log, dictated by investigation
+Machine: m4 (local Mac, user jeff) — all commands below ran on m4 unless noted.
+
+1. THE PROBLEM
+--------------
+Jocala Catalog (com.jocala.catalog) cannot load its library. Every launch
+fails reading the live Calibre database over SMB:
+
+  "Could not reach the Calibre database at
+   smb://192.168.1.39/ebooks/calibre/metadata.db.
+   nwerror: posixerrorcode(rawvalue: 50): network is down …"
+
+App log (~/Library/Application Support/com.jocala.Catalog/app_log.txt),
+identical on every failing run (22:09, 22:12, 22:29, 22:31, 22:32, 22:35):
+
+  [22:12:01.865] I/ReaderLog: === App Start ===
+  [22:12:01.865] I/SMB: download transient/non-auth failure, retrying
+      host=192.168.1.39 err=NWError: … (Network.NWError error 50 - Network is down)
+  [22:12:02.720] E/SMB: download retry failed host=192.168.1.39 err=NWError … error 50
+  [22:12:02.721] E/CatalogStore: load failed mode=Books Could not reach …
+
+Both the initial attempt AND the built-in retry (~800 ms later) die with
+NWError posix 50 (ENETDOWN) at TCP-connect time — before any SMB bytes,
+before authentication. The error dialog is produced by
+CatalogDBError.network in Sources/CatalogSwiftApp/SmbCatalogDB.swift:63-64.
+
+2. ENVIRONMENT
+--------------
+- App:     /Users/jeff/source/catalog/build/Jocala Catalog.app
+           (bundle com.jocala.catalog, executable Contents/MacOS/CatalogSwift)
+- Package: /Users/jeff/source/catalog  (SwiftPM JocalaCatalogSwift, macOS 14+;
+           flattened 2026-09-20 — this dir IS the ex-catalog-swift/ package)
+- Server:  debian 192.168.1.39, SMB port 445, share "ebooks",
+           path calibre/metadata.db, user jeff
+- Sibling: /Users/jeff/source/reader/macos/build/Jocala Reader.app
+           (bundle com.jocala.reader) — SAME SMB stack, works fine (see §4.9)
+- Data:    ~/Library/Application Support/com.jocala.Catalog/
+           (app_log.txt, settings.json, covers/ — 7040 covers fetched 18:21,
+           i.e. SMB WORKED earlier the same day)
+- Network: route to 192.168.1.39 via en0 = wired Ethernet (NOT Wi-Fi).
+           No MDM enrollment. No third-party content filters
+           (systemextensionsctl: only Kensington dock + Karabiner HID drivers).
+           No quarantine xattr on the bundle (no translocation).
+
+3. SESSION TIMELINE (what changed before it broke)
+-------------------------------------------------
+- 16:58  Debug bundle Dev-ID signed (worked; covers fetched 18:21).
+- ~21:51 Release build: swift build -c release
+          (scratch-path …/catalog/catalog-swift/build). Binary 5.6 MB,
+          md5 6f0612f33b18303a74330b741182d5d1. Assembled + Dev-ID signed.
+- ~21:52 Notarized via profile notary-jeff (ID daacc2e1… Accepted),
+          stapled. spctl: accepted, source=Notarized Developer ID.
+- AGENTS updated: catalog = always sign + notarize (was: signed-only).
+- User flattened the tree: catalog-swift/* moved up to source/catalog/;
+          crates/, Cargo.toml, old egui build/, tree AGENTS.md removed
+          (Rust side recoverable from /Users/jeff/source/backups/e34e6e0d.tar).
+- Stale SwiftPM module cache (old absolute path) broke first post-move
+          build (SwiftShims pcm error) → cleared ModuleCache/build.db →
+          clean Build complete! (22.78 s), new binary md5 5834bd9c….
+- Reassembled + re-signed + re-notarized (ID c2e0391c… Accepted, stapled).
+- 22:02–22:10 LaunchServices unregister/register churn for com.jocala.catalog
+          (bundle deleted + recreated + moved, see system log §5).
+- 22:09 FIRST FAILURE logged. Failures repeat 22:12, 22:29, 22:31, 22:32, 22:35.
+- "rebuild sign and notarize" turn: build no-op (0.10 s); discovered
+          build/Jocala Catalog.app MISSING (deleted by unknown hand ~22:10);
+          reassembled from scratch, re-signed (SIG-OK), re-notarized
+          (ID 289903a3… Accepted, stapled, spctl accepted).
+- Debugging session (§4) → user said "stop" during a log-stream capture.
+
+4. DIAGNOSTIC STEPS (in order, with results)
+--------------------------------------------
+4.1 Bundle packaging verified GOOD (multiple times, incl. after each rebuild):
+  plutil -p "…/Jocala Catalog.app/Contents/Info.plist"
+    → CFBundleExecutable=CatalogSwift, CFBundleIdentifier=com.jocala.catalog,
+      NSLocalNetworkUsageDescription present ("Jocala Catalog connects to
+      your Calibre library and Kobo e-reader on your local network.")
+  codesign -d --entitlements - "…" → com.apple.security.network.client=true
+  codesign -dvvv → Authority=Developer ID Application: jeff elkins
+      (9Q77WK7W3R), TeamIdentifier=9Q77WK7W3R, flags runtime (hardened)
+  codesign -v → SIG-OK.  spctl -a -vv → accepted, source=Notarized Developer ID.
+
+4.2 Network/server verified GOOD (from m4):
+  ping -c2 192.168.1.39 → 0.0% loss, ~0.7 ms
+  nc -vz -w3 192.168.1.39 445 → succeeded
+  No stray app copies (/Applications and ~/Desktoponstruktor absent).
+
+4.3 User TCC database: sqlite3 ~/Library/Application Support/com.apple.TCC/TCC.db
+  → NO kTCCServiceLocalNetwork service at user level at all (LAN grants live
+  in the system TCC, unreadable from here).
+
+4.4 Quarantine: xattr -l on .app and binary → only com.apple.macl /
+  com.apple.provenance. No com.apple.quarantine → no translocation.
+
+4.5 Code read (the connect path):
+  - SmbCatalogDB.snapshot() → SmbService.downloadData(host:user:password:
+    share:domain:remotePath:) → SMBClient(host, port:445) → login →
+    connectShare → create/read.
+  - SmbService.withFreshClient retries ONCE on transient errors incl.
+    ENETDOWN/UNREACH/timeout (SmbService.swift:6-76). Both attempts fail.
+  - Vendored transport SMBClient/Connection.swift: NWConnection(to:
+    .hostPort(host, 445), using: .tcp), start(queue:), continuation throws
+    on .waiting(error) / .failed(error). ENETDOWN surfaces here at TCP
+    connect — pre-SYN, pre-auth (so credentials/Keychain are irrelevant).
+  - classifySMBError (SmbCatalogDB.swift:70-84): anything not sharing/auth/
+    not-found → .network ("Could not reach…").
+
+4.6 Live settings decoded byte-clean:
+  python3 plistlib on defaults export → library_source 'smb',
+  host "192.168.1.39" EXACT (no whitespace/invisible chars), port 445,
+  user jeff, share ebooks, calibreMetadataPath calibre/metadata.db.
+  (Also settings.json in data dir agrees.)
+
+4.7 SMB stack diffed against working sibling: diff -rq
+  catalog/Sources/CatalogCore/SMBClient/
+  reader/macos/Sources/CatalogCore/SMBClient/ → IDENTICAL (no output).
+  Same code, same call, same inputs.
+
+4.8 Reader packaging equivalent: Dev-ID signed, network.client entitlement,
+  NSLocalNetworkUsageDescription present, spctl accepted Notarized Developer ID.
+
+4.9 CONTROL TEST — sibling works (run by me at 22:24):
+  open "/Users/jeff/source/reader/macos/build/Jocala Reader.app"
+  → ~/.jreader/app_log.txt: fetched 44199936 bytes … books=6755 total=6755.
+  Same machine, same server, same code family, same signing → works.
+  (Quit gracefully afterwards via osascript.)
+
+4.10 System-log mining (log show):
+  - 22:02:31 applicationUnregistered + 22:02:41/22:06:22 applicationRegistered
+    for com.jocala.catalog (flatten churn).
+  - 21:56 launch used OLD path catalog-swift/build/… (runningboardd exPath).
+  - tccd AUTHREQ_ATTRIBUTION lines normal for both old and new paths.
+  - syspolicyd GK evaluateScanResult + provenance: team 9Q77WK7W3R, notarized OK.
+  - SMOKING-GUN CANDIDATE: UserEventAgent networkextension "LocalNetwork:
+    found bundle id com.jocala.catalog by PID" at 22:09:27.328 (failure at
+    .340) and 22:12:01.853 (failure at .865). Reader's successful 22:24 run
+    produced NO such line. (Later failing runs 22:29/22:32 also lack it —
+    meaning of the line is unresolved: resolution-cache-miss vs deny path.)
+
+4.11 CONTROL TEST — Terminal NWConnection (/tmp/nwtest.swift):
+  identical NWConnection(to: 192.168.1.39:445, using: .tcp) from `swift`
+  script → READY. Same API + target + machine works outside the app.
+
+4.12 tccutil BLOCKED: `tccutil reset LocalNetwork com.jocala.catalog` AND
+  full `tccutil reset LocalNetwork` → both "Failed to reset", exit 70.
+  (LocalNetwork DB not writable via CLI on this OS.) NB: man page syntax
+  `tccutil reset SERVICE [BUNDLE_ID]` is valid; the failure is OS refusal.
+  Side note: AGENTS documented `notarytool history --limit 1`; this
+  notarytool rejects --limit (fixed in AGENTS to bare `history`).
+
+4.13 lsregister -f on the bundle (rebuild LaunchServices record) → relaunch
+  → STILL FAILS identically.
+
+4.14 Ad-hoc identity test: cp -R bundle → /tmp/CatalogDiag.app, re-sign
+  ad-hoc (Identifier=com.jocala.catalog, Signature=adhoc) → open →
+  STILL FAILS 50. (Fresh code identity, zero TCC history → rules out
+  Dev-ID-identity-keyed and duplicate-record-keyed theories.)
+
+4.15 New-bundle-ID test: /tmp/CatalogDiag2.app (CFBundleIdentifier +
+  CFBundleName rewritten to com.jocala.catalogdiag/CatalogDiag2, ad-hoc
+  signed) + cloned defaults (defaults export com.jocala.catalog |
+  defaults import com.jocala.catalogdiag) → open → STILL FAILS 50.
+  (Rules out bundle-ID-string-keyed stuck deny. Keychain password unreadable
+  under new ID as expected, but failure occurs before auth anyway.)
+
+4.16 SMOKING GUN — bare binary works:
+  /tmp/CatalogDiag.app/Contents/MacOS/CatalogSwift launched directly from
+  shell (Terminal responsibility context, no bundle context) →
+  fetched 44199936 bytes … books=6755 total=6755. SAME BYTES that fail
+  when launched as a bundle (open/Finder). (Process cleaned up after.)
+
+4.17 Interface theory checked and KILLED: route via en0 Ethernet (wired);
+  airportd lines are background auto-join noise. Deterministic fail/work
+  pattern can't be flaps anyway.
+
+4.18 Info.plist full diff catalog-vs-reader: equivalent (names/versions/
+  description text only). Entitlements equivalent. No ATS keys, no sandbox.
+
+4.19 Live log-stream capture during launch: ABORTED by user ("stop").
+
+5. EVIDENCE TABLE
+-----------------
+ #  Launch context                                  Result
+ 1  Catalog.app via Finder/open, Dev-ID, old path   FAIL 50 (21:56 era/22:09)
+ 2  Catalog.app via open, Dev-ID, new path          FAIL 50 (22:12/22:29/22:32)
+ 3  /tmp/CatalogDiag.app via open, ad-hoc, same ID  FAIL 50 (22:31)
+ 4  /tmp/CatalogDiag2.app via open, ad-hoc, new ID  FAIL 50 (22:35)
+ 5  Same binary as #3 run bare from shell           WORKS, 6755 books (22:32)
+ 6  Reader.app via open, Dev-ID                     WORKS, 6755 books (22:24)
+ 7  Terminal swift NWConnection :445                READY
+ 8  nc/ping to .39:445                              OK
+
+6. ELIMINATED CAUSES
+--------------------
+Network path, server/SMB, port, credentials/Keychain (pre-auth failure),
+wrong host string (byte-verified), code defects (identical stack works in
+Reader), packaging (plist key, entitlements, Dev-ID sig, staple all verified),
+quarantine/translocation, MDM, third-party firewalls/content filters
+(user-confirmed + systemextensionsctl), Wi-Fi flaps (wired en0), proxy
+(same API both sides), Dev-ID-identity-keyed TCC, bundle-ID-keyed TCC,
+duplicate-record-keyed TCC (ad-hoc + new-ID copies still fail).
+
+7. REMAINING STATE / OPEN ITEMS
+-------------------------------
+- The failure is 100% in the *bundle-launch context*: same bytes fail via
+  LaunchServices, work as a Unix child of Terminal. Reader's bundle context
+  works. Root cause NOT identified.
+- User reports: (a) network/SMB fine, (b) no firewall-type software,
+  (c) Jocala Catalog listed TWICE in Settings → Privacy → Local Network,
+  both toggles ON, (d) NO Local Network permission prompt EVER appeared
+  for catalog (any build/identity tonight).
+- Toggle dance tried (both OFF → relaunch): still fails, still no prompt.
+- UserEventAgent "found bundle id by PID" lines correlate with two failures
+  but are absent in other identical failures — semantics unknown.
+- Untried: reboot (TCC/NE daemon state); sudo tccutil (needs admin Terminal
+  — I cannot elevate; command for user:
+  `sudo tccutil reset LocalNetwork com.jocala.catalog`); watching for a
+  prompt during a controlled launch; Apple Feedback Assistant if systemic.
+- Leftover diagnostics on disk: /tmp/CatalogDiag.app, /tmp/CatalogDiag2.app,
+  /tmp/JocalaCatalog-backup.app (pre-flatten stapled copy, spctl accepted),
+  /tmp/nwtest.swift, /tmp/diag-run.log, /tmp/catdefs.plist(.json),
+  /tmp/JocalaCatalog-submit{,2,3}.zip. Running processes: none expected
+  (Catalog 55288 may still be up with error dialog — verify before relaunch).
+- Release binary hash of record: 5834bd9cd30839f8ef469082a96d8a62 (pre-sign).
+  Last notarization: ID 289903a3-85b0-4f0a-a761-0872ca363598, Accepted, stapled.
+
+8. KEY FILE PATHS
+-----------------
+/Users/jeff/source/catalog/                           flattened Swift package
+/Users/jeff/source/catalog/Package.swift
+/Users/jeff/source/catalog/Sources/CatalogCore/Services/SmbService.swift
+/Users/jeff/source/catalog/Sources/CatalogCore/SMBClient/Connection.swift
+/Users/jeff/source/catalog/Sources/CatalogSwiftApp/SmbCatalogDB.swift
+/Users/jeff/source/catalog/Sources/CatalogCore/Models/SmbCredentials.swift
+/Users/jeff/source/catalog/Info.plist
+/Users/jeff/source/catalog/CatalogSwift.entitlements
+/Users/jeff/source/catalog/README.md
+/Users/jeff/source/catalog/AGENTS.md                 (recreated post-flatten)
+/Users/jeff/source/catalog/build/Jocala Catalog.app   (sole product)
+/Users/jeff/source/catalog/build/arm64-apple-macosx/release/CatalogSwift
+/Users/jeff/source/reader/macos/                      sibling (works)
+/Users/jeff/source/reader/macos/build/Jocala Reader.app
+/Users/jeff/.config/opencode/AGENTS.md                canonical signing §
+~/Library/Application Support/com.jocala.Catalog/app_log.txt
+~/.jreader/app_log.txt                                 reader control log

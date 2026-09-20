@@ -1,0 +1,17 @@
+[package]
+name = "catalog-egui"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "JocalaCatalog"
+path = "src/main.rs"
+
+[dependencies]
+catalog-core = { path = "../catalog-core" }
+eframe = { workspace = true }
+egui = { workspace = true }
+egui_extras = { workspace = true }
+tokio = { workspace = true }
+image = "0.25"
+rfd = { workspace = true }
