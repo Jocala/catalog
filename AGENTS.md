@@ -31,6 +31,9 @@ nightly source tarballs (`/Users/jeff/source/backups/`, e.g. `e34e6e0d.tar` 2026
   `build/Jocala Catalog.app/Contents/MacOS/CatalogSwift`.
 - Proven 2026-09-20 release: Dev-ID signed + stapled `accepted, source=Notarized Developer ID`.
 
+## Windows — `windows/` (`com.jocala.catalog`, `JocalaCatalog`)
+- WPF + Rust core via P/Invoke (`windows/CatalogWin.sln` → `src/CatalogWin` + `tests/CatalogWin.Tests`, `CATALOG.md`). Mirrors `CatalogWin` hard rules: software-only rendering (`App.xaml.cs` `SoftwareOnly`), raw SMB, `ItemWindow` windowing (stock `WrapPanel`/`UniformGrid` + spacer window, never custom `VirtualizingWrapPanel`), SSH.NET `ShellStream` heredoc for Kobo, single `bin\x64\Release` tree (`<Platforms>x64</Platforms>` remap). See `windows/CATALOG.md` (authoritative for Windows ops) + `windows/src/CatalogWin/` for the implementation.
+
 ## Conventions
 - No hardcoded hosts/ports/credentials; keep diffs small.
 - Re-sign + notarize `.app` after ANY bundle change (binary, plist, icns).

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>JocalaCatalog</AssemblyName>
+    <RootNamespace>CatalogWin</RootNamespace>
+    <!-- Exe + window icon (multi-size .ico generated from catalog AppIcon.icns). -->
+    <ApplicationIcon>AppIcon.ico</ApplicationIcon>
+    <!-- Single output tree: the native catalog_ffi.dll is x64-only, so the
+         MSBuild AnyCPU default is remapped to x64 (bin\x64\Release) for
+         every invocation — sln build, direct build, dotnet test. -->
+    <Platforms>x64</Platforms>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x64</Platform>
+    <Version>1.0.0</Version>
+    <!-- GPU-less VMs (QXL, no passthrough): WPF falls back to software.
+         Forced SoftwareOnly in App.xaml.cs; do not add D3D/QML dependencies. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+    <PackageReference Include="SSH.NET" Version="2025.0.0" />
+  </ItemGroup>
+  <!-- NU1903: SSH.NET vuln advisories are unactionable here — client talks
+       only to our own Kobo e-readers on the LAN. Revisit if upstream ships
+       a clean version. -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+
+</Project>

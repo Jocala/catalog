@@ -45,7 +45,7 @@ End the three-transport sprawl (Swift `/usr/bin/ssh`, C# SSH.NET, dead Rust
    verify bytes, delete. Then the real Ulysses script.
 5. **FFI**: `kobo_sync_to_device(book_id, ip, settings_json) -> JSON`
    (blocking) + Mac smoke tests vs fixture.
-6. **Windows (win10 MCP)**: follow `reader/windows/CATALOG.md` mirror flow
+6. **Windows (win10 MCP)**: follow `windows/CATALOG.md` mirror flow
    (Rust tree → `C:\source\reader\catalog`; note VM starts via `virsh start
    win10` on debian, ~2min boot). `cargo build --release -p catalog-ffi` →
    DLL → thin `CatalogWin` down to `KoboSync.cs` P/Invoke + progress →

@@ -1,3 +1,9 @@
 /target/
 catalog-swift/build/
 .DS_Store
+
+# Windows (WPF) — CatalogWin inside windows/
+windows/**/bin/
+windows/**/obj/
+windows/**/.vs/
+windows/**/TestResults/
