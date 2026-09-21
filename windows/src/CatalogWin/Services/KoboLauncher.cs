@@ -67,6 +67,7 @@ public static class KoboLauncher
     {
         // 1. Quick reachability: ssh echo ok with 5s timeout.
         var probe = SshSync(ip, "echo ok", 5);
+        if (probe.Code == 255) return (probe.Output, probe.Code); // auth rejection, already specific
         if (probe.Code != 0 || !probe.Output.ToLowerInvariant().Contains("ok"))
         {
             string hint = probe.Output.Length == 0
@@ -231,17 +232,28 @@ public static class KoboLauncher
     /// no Expect, no exec channel, no pipes, no temp files.
     public static (string Output, int Code) SshSync(string ip, string remoteCmd, int timeoutSec)
     {
-        string keyFile = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".ssh", "id_ed25519");
-        if (!File.Exists(keyFile))
-            return ($"ssh key not found: {keyFile}", -1);
+        // macOS koboSSHInvocation parity: a configured per-IP password
+        // authenticates via PasswordAuthenticationMethod; empty means
+        // key-only, byte-identical to the legacy invocation.
+        string? koboPass = SettingsStore.Load().KoboPasswordFor(ip);
+        if (string.IsNullOrEmpty(koboPass))
+        {
+            string keyFile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".ssh", "id_ed25519");
+            if (!File.Exists(keyFile))
+                return ($"ssh key not found: {keyFile}", -1);
+        }
         SshClient? client = null;
         Renci.SshNet.ShellStream? shell = null;
         try
         {
-            client = new SshClient(new ConnectionInfo(ip, "root",
-                new PrivateKeyAuthenticationMethod("root", new PrivateKeyFile(keyFile)))
+            AuthenticationMethod auth = !string.IsNullOrEmpty(koboPass)
+                ? new PasswordAuthenticationMethod("root", koboPass)
+                : new PrivateKeyAuthenticationMethod("root", new PrivateKeyFile(Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".ssh", "id_ed25519")));
+            client = new SshClient(new ConnectionInfo(ip, "root", auth)
             {
                 Timeout = TimeSpan.FromSeconds(timeoutSec + 5),
             });
@@ -288,6 +300,13 @@ public static class KoboLauncher
                 Thread.Sleep(100);
             }
             return (sb.ToString().Replace("\r\n", "\n").Replace('\r', '\n').Trim() + "\n(timed out)", 124);
+        }
+        catch (Renci.SshNet.Common.SshAuthenticationException)
+        {
+            // macOS isAuthFailure parity: wrong stored password (or a key
+            // the Kobo no longer trusts) says so explicitly instead of the
+            // generic unreachable hint. Code 255 mirrors ssh exit 255.
+            return ($"SSH password rejected for {ip} — check Settings → Kobo.", 255);
         }
         catch (Exception ex)
         {

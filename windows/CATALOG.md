@@ -72,6 +72,22 @@ Parity gate: `books=6742` against the live library
 `DllNotFoundException` from `ProbeAsync` — that means the DLL step was
 skipped, not a code bug.
 
+## Verified 2026-09-21 (win10, Kobo password parity)
+- `Settings`: `KoboPasswords` ip→password dict (`KoboPasswordFor`/`SetKoboPassword`,
+  empty = key-only) + `RenameKobo` (in-place IP rename carries password +
+  default); Settings → Kobo is per-row cards mirroring macOS `KoboDevice`
+  rows: star (gold = default) + editable mono IP + Password + Show/Hide
+  (in-memory reveal) + per-row ping Test with Pass/Fail pill + red 🗑;
+  Add row + caption; Remove drops the password.
+- `KoboLauncher.SshSync`: configured password → SSH.NET
+  `PasswordAuthenticationMethod`, else legacy `PrivateKey` (unchanged);
+  `SshAuthenticationException` → `SSH password rejected for <ip> — check
+  Settings → Kobo` (code 255, propagated through the probe).
+- `dotnet build CatalogWin.sln -c Release`: 0 warnings, 0 errors.
+- `dotnet test`: 25/25 pass (incl. 8 `KoboPasswordTests`: store + rename-carry).
+- Live password-auth vs Color `.74` still user-driven: enter the password in
+  Settings → Kobo on the VM (passwords are never in source).
+
 ## Verified 2026-09-19 (win10, native)
 - Rust 1.98.1 stable MSVC installed per-user (`%USERPROFILE%\.cargo`);
   MSVC 14.51 + Win10 SDK 10.0.26100 present (VS Community 2022 17.14).

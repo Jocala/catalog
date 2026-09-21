@@ -38,8 +38,8 @@ nightly source tarballs (`/Users/jeff/source/backups/`, e.g. `e34e6e0d.tar` 2026
 - No hardcoded hosts/ports/credentials; keep diffs small.
 - Mac/Windows parity: every Mac-side feature or behavior change probably needs
   a Windows mirror in `windows/` (SSH.NET transport, WPF UI) — scope it in the
-  same change, or record it as an explicit todo (e.g. Kobo per-IP SSH passwords:
-  Mac shipped, Windows still key-only).
+  same change, or record it as an explicit todo. (Kobo per-IP SSH passwords:
+  shipped on Mac + Windows 2026-09-21.)
 - Re-sign + notarize `.app` after ANY bundle change (binary, plist, icns).
 - `Info.plist` must carry `NSLocalNetworkUsageDescription` (else `NWConnection` fails posix 50).
 

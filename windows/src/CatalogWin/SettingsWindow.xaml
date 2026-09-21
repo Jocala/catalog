@@ -60,17 +60,17 @@
 
                 <GroupBox Header="Kobo" Margin="0,0,0,8">
                     <StackPanel Margin="8">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBox x:Name="NewKoboBox" Width="180" FontFamily="Consolas"/>
-                            <Button Content="Add" Margin="6,0,0,0" Padding="12,0" Click="KoboAdd_Click"/>
-                            <Button Content="Remove" Margin="6,0,0,0" Padding="12,0" Click="KoboRemove_Click"/>
-                            <Button Content="★ Default" Margin="6,0,0,0" Padding="12,0" Click="KoboStar_Click" ToolTip="Set selected as default for Read on Kobo"/>
-                        </StackPanel>
-                        <ListBox x:Name="KoboList" Height="70" Margin="0,8,0,0"/>
+                        <!-- Per-row cards (macOS KoboDevice parity): star = default,
+                             editable IP, password + Show, per-row ping Test, trash.
+                             Built in code-behind (RefreshKoboList). -->
+                        <StackPanel x:Name="KoboRows"/>
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="Test" Padding="12,0" Click="KoboTest_Click" ToolTip="Ping the selected Kobo (awake check)"/>
-                            <TextBlock x:Name="KoboTestResult" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="Gray"/>
+                            <TextBox x:Name="NewKoboBox" Width="150" FontFamily="Consolas"/>
+                            <Button Content="Add" Margin="6,0,0,0" Padding="12,0" Click="KoboAdd_Click"/>
                         </StackPanel>
+                        <TextBlock Text="Star selects default for Read on Kobo. IP + password edit in place; password is optional. Ping tests awake."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        <TextBlock x:Name="KoboStatus" Foreground="Gray" FontSize="11" Margin="0,2,0,0"/>
                     </StackPanel>
                 </GroupBox>
 

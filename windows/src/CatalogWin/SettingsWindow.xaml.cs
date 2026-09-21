@@ -12,6 +12,10 @@ namespace CatalogWin;
 public partial class SettingsWindow : Window
 {
     private AppSettings _s;
+    // macOS parity, both in-memory only (never persisted):
+    // per-row password reveal + per-row ping test results, keyed by IP.
+    private readonly HashSet<string> _revealedKobo = new();
+    private readonly Dictionary<string, string> _koboTestResults = new();
 
     public SettingsWindow()
     {
@@ -28,19 +32,208 @@ public partial class SettingsWindow : Window
         string host = srv?.Host ?? "";
         if (host.Length > 0) PassBox.Password = _s.PasswordFor(host) ?? "";
         RefreshKoboList();
+        NewKoboBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.Enter) KoboAdd_Click(NewKoboBox, new RoutedEventArgs());
+        };
         ThemeBox.SelectedIndex = Math.Clamp(_s.ThemePreference, 0, 2);
         UpdateSourceEnabled();
     }
 
+    // macOS KoboDevice rows parity: star (default) + editable IP +
+    // Password + Show + per-row ping Test + trash. Rows are rebuilt on
+    // add/remove/rename/star; password keystrokes write straight through
+    // to _s so the model is never behind the boxes.
     private void RefreshKoboList()
     {
-        KoboList.ItemsSource = null;
-        KoboList.ItemsSource = _s.KoboIps
-            .Select(ip => ip == _s.KoboIp ? $"★ {ip}" : $"  {ip}")
-            .ToList();
+        KoboRows.Children.Clear();
+        foreach (string ip in _s.KoboIps.ToList())
+            KoboRows.Children.Add(BuildKoboRow(ip));
     }
 
-    private static string StripStar(string s) => s.Trim().TrimStart('★').Trim();
+    private static readonly System.Windows.Media.Brush StarOn =
+        System.Windows.Media.Brushes.Goldenrod;
+    private static readonly System.Windows.Media.Brush StarOff =
+        System.Windows.Media.Brushes.Gray;
+
+    private System.Windows.Controls.Border BuildKoboRow(string ip)
+    {
+        string committed = ip; // row's IP as last committed (rename target)
+        bool isDefault = committed == _s.KoboIp;
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var card = new System.Windows.Controls.Border
+        {
+            Child = row,
+            CornerRadius = new CornerRadius(6),
+            Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromArgb(0x0F, 0x80, 0x80, 0x80)),
+            Padding = new Thickness(4),
+            Margin = new Thickness(0, 0, 0, 4),
+        };
+
+        var star = new Button
+        {
+            Content = isDefault ? "★" : "☆",
+            Foreground = isDefault ? StarOn : StarOff,
+            Width = 26, Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            ToolTip = isDefault ? "Default" : "Set as default",
+        };
+        star.Click += (_, _) =>
+        {
+            _s.KoboIp = committed;
+            KoboStatus.Text = $"Default Kobo: {committed}";
+            RefreshKoboList();
+        };
+        row.Children.Add(star);
+
+        var ipBox = new TextBox
+        {
+            Text = committed, Width = 150, FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "IP address",
+        };
+        void CommitIp()
+        {
+            string next = ipBox.Text.Trim();
+            if (next.Length == 0 || next == committed) { ipBox.Text = committed; return; }
+            _s.RenameKobo(committed, next);
+            if (_revealedKobo.Remove(committed)) _revealedKobo.Add(next);
+            if (_koboTestResults.Remove(committed, out string? r)) _koboTestResults[next] = r;
+            RefreshKoboList();
+        }
+        ipBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.Enter) CommitIp();
+        };
+        ipBox.LostFocus += (_, _) => CommitIp();
+        row.Children.Add(ipBox);
+
+        row.Children.Add(new TextBlock
+        {
+            Text = "Password", Width = 60, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0),
+        });
+        var passBox = new PasswordBox { Width = 100, VerticalAlignment = VerticalAlignment.Center };
+        var passShow = new TextBox
+        {
+            Width = 100, FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+            VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed,
+        };
+        string initPw = _s.KoboPasswordFor(committed) ?? "";
+        passBox.Password = initPw;
+        passShow.Text = initPw;
+        bool revealed = _revealedKobo.Contains(committed);
+        passBox.Visibility = revealed ? Visibility.Collapsed : Visibility.Visible;
+        passShow.Visibility = revealed ? Visibility.Visible : Visibility.Collapsed;
+        passBox.PasswordChanged += (_, _) =>
+        {
+            if (passShow.Visibility == Visibility.Visible) return;
+            _s.SetKoboPassword(committed, passBox.Password);
+        };
+        passShow.TextChanged += (_, _) =>
+        {
+            if (passShow.Visibility != Visibility.Visible) return;
+            _s.SetKoboPassword(committed, passShow.Text);
+        };
+        row.Children.Add(passBox);
+        row.Children.Add(passShow);
+
+        var showBtn = new Button
+        {
+            Content = revealed ? "Hide" : "Show", Width = 52,
+            Margin = new Thickness(6, 0, 0, 0), Padding = new Thickness(8, 0, 8, 0),
+        };
+        showBtn.Click += (_, _) =>
+        {
+            if (passShow.Visibility == Visibility.Visible)
+            {
+                passBox.Password = passShow.Text;
+                passShow.Visibility = Visibility.Collapsed;
+                passBox.Visibility = Visibility.Visible;
+                showBtn.Content = "Show";
+                _revealedKobo.Remove(committed);
+            }
+            else
+            {
+                passShow.Text = passBox.Password;
+                passBox.Visibility = Visibility.Collapsed;
+                passShow.Visibility = Visibility.Visible;
+                showBtn.Content = "Hide";
+                _revealedKobo.Add(committed);
+            }
+        };
+        row.Children.Add(showBtn);
+
+        var pill = new TextBlock
+        {
+            Width = 45, FontWeight = FontWeights.Bold, FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0),
+        };
+        void SetPill(string? result)
+        {
+            if (result is null) { pill.Text = "Pass"; pill.Opacity = 0; return; }
+            pill.Opacity = 1;
+            pill.Text = result;
+            pill.Foreground = result == "Pass"
+                ? System.Windows.Media.Brushes.Green : System.Windows.Media.Brushes.Red;
+        }
+        _koboTestResults.TryGetValue(committed, out string? saved);
+        SetPill(saved);
+
+        var testBtn = new Button
+        {
+            Content = "Test", Width = 52, Margin = new Thickness(8, 0, 0, 0),
+            Padding = new Thickness(8, 0, 8, 0),
+            ToolTip = "Ping this Kobo (awake check)",
+        };
+        testBtn.Click += async (_, _) =>
+        {
+            SetPill(null);
+            testBtn.IsEnabled = false;
+            try
+            {
+                using var ping = new Ping();
+                var reply = await ping.SendPingAsync(committed, 1000);
+                string r = reply.Status == IPStatus.Success ? "Pass" : "Fail";
+                _koboTestResults[committed] = r;
+                SetPill(r);
+                KoboStatus.Text = r == "Pass"
+                    ? $"{committed}: {reply.RoundtripTime}ms awake"
+                    : $"{committed}: {reply.Status} (sleeping?)";
+            }
+            catch (Exception ex)
+            {
+                _koboTestResults[committed] = "Fail";
+                SetPill("Fail");
+                KoboStatus.Text = $"{committed}: unreachable ({ex.Message})";
+            }
+            finally { testBtn.IsEnabled = true; }
+        };
+        row.Children.Add(testBtn);
+
+        var trash = new Button
+        {
+            Content = "\U0001F5D1", Width = 30, Margin = new Thickness(6, 0, 0, 0),
+            Foreground = System.Windows.Media.Brushes.Red,
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0), ToolTip = "Remove",
+        };
+        trash.Click += (_, _) =>
+        {
+            _s.KoboIps.Remove(committed);
+            _s.SetKoboPassword(committed, "");
+            _revealedKobo.Remove(committed);
+            _koboTestResults.Remove(committed);
+            if (_s.KoboIp == committed) _s.KoboIp = _s.KoboIps.FirstOrDefault() ?? "";
+            RefreshKoboList();
+        };
+        row.Children.Add(trash);
+        row.Children.Add(pill);
+
+        return card;
+    }
 
     private void Source_Changed(object sender, RoutedEventArgs e) => UpdateSourceEnabled();
 
@@ -130,47 +323,9 @@ public partial class SettingsWindow : Window
         {
             _s.KoboIps.Add(ip);
             if (_s.KoboIp.Length == 0) _s.KoboIp = ip;
+            KoboStatus.Text = $"Added {ip}";
             RefreshKoboList();
             NewKoboBox.Text = "";
-        }
-    }
-
-    private void KoboRemove_Click(object sender, RoutedEventArgs e)
-    {
-        if (KoboList.SelectedItem is string sel)
-        {
-            string ip = StripStar(sel);
-            _s.KoboIps.Remove(ip);
-            if (_s.KoboIp == ip) _s.KoboIp = _s.KoboIps.FirstOrDefault() ?? "";
-            RefreshKoboList();
-        }
-    }
-
-    private void KoboStar_Click(object sender, RoutedEventArgs e)
-    {
-        if (KoboList.SelectedItem is string sel)
-        {
-            _s.KoboIp = StripStar(sel);
-            RefreshKoboList();
-        }
-    }
-
-    private async void KoboTest_Click(object sender, RoutedEventArgs e)
-    {
-        string ip = KoboList.SelectedItem is string sel ? StripStar(sel) : _s.KoboIp;
-        if (ip.Length == 0) { KoboTestResult.Text = "no Kobo IP"; return; }
-        KoboTestResult.Text = "pinging…";
-        try
-        {
-            using var ping = new Ping();
-            var reply = await ping.SendPingAsync(ip, 1000);
-            KoboTestResult.Text = reply.Status == IPStatus.Success
-                ? $"{ip}: {reply.RoundtripTime}ms awake"
-                : $"{ip}: {reply.Status} (sleeping?)";
-        }
-        catch (Exception ex)
-        {
-            KoboTestResult.Text = $"{ip}: unreachable ({ex.Message})";
         }
     }
 
@@ -199,6 +354,7 @@ public partial class SettingsWindow : Window
             LocalLibraryDir = SettingsStore.NormalizedLocalDir(LocalDirBox.Text),
             KoboIp = _s.KoboIp,
             KoboIps = new List<string>(_s.KoboIps),
+            KoboPasswords = new Dictionary<string, string>(_s.KoboPasswords),
             ThemePreference = ThemeBox.SelectedIndex,
             SmbServers = new List<SmbServer>
             {
