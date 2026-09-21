@@ -37,6 +37,12 @@ swift build -c release --scratch-path /Users/jeff/source/catalog/build \
 #   cp build/arm64-apple-macosx/release/CatalogSwift "build/Jocala Catalog.app/Contents/MacOS/CatalogSwift"
 #   cp Info.plist "build/Jocala Catalog.app/Contents/Info.plist"
 #   cp Resources/AppIcon.icns "build/Jocala Catalog.app/Contents/Resources/AppIcon.icns"
+#   cp Sources/CatalogSwiftApp/Resources/help.html Sources/CatalogSwiftApp/Resources/donatel.png \
+#     "build/Jocala Catalog.app/Contents/Resources/"
+#   cp -R build/release/JocalaCatalogSwift_CatalogSwiftApp.bundle \
+#     "build/Jocala Catalog.app/Contents/Resources/"  # REQUIRED (2026-09-21):
+#     About/Help touch Bundle.module first — without the .bundle the app
+#     traps on open (EXC_BREAKPOINT resource_bundle_accessor.swift:44).
 #   printf 'APPL????' > "build/Jocala Catalog.app/Contents/PkgInfo"
 #   codesign --force --deep --options runtime --timestamp \
 #     --entitlements CatalogSwift.entitlements \

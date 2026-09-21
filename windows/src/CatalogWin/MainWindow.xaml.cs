@@ -105,8 +105,6 @@ public partial class MainWindow : Window
         StatusText.Text = _store.StatusText;
         bool searching = _store.IsSearchMode;
         LibraryBtn.Visibility = searching ? Visibility.Visible : Visibility.Collapsed;
-        ResultsText.Visibility = searching ? Visibility.Visible : Visibility.Collapsed;
-        if (searching) ResultsText.Text = _store.StatusText;
 
         LoadingView.Visibility = _store.IsLoading ? Visibility.Visible : Visibility.Collapsed;
         bool drilled = _store.DrilledKind is not null;

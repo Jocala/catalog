@@ -100,7 +100,10 @@ public partial class SettingsWindow : Window
         {
             Content = isDefault ? "★" : "☆",
             Foreground = isDefault ? StarOn : StarOff,
-            Width = 26, Background = System.Windows.Media.Brushes.Transparent,
+            Width = 34, Padding = new Thickness(0), FontSize = 14,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Background = System.Windows.Media.Brushes.Transparent,
             BorderThickness = new Thickness(0),
             ToolTip = isDefault ? "Default" : "Set as default",
         };
@@ -239,7 +242,10 @@ public partial class SettingsWindow : Window
 
         var trash = new Button
         {
-            Content = "\U0001F5D1", Width = 30, Margin = new Thickness(6, 0, 0, 0),
+            Content = "\U0001F5D1", Width = 34, Margin = new Thickness(6, 0, 0, 0),
+            Padding = new Thickness(0), FontSize = 14,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
             Foreground = System.Windows.Media.Brushes.Red,
             Background = System.Windows.Media.Brushes.Transparent,
             BorderThickness = new Thickness(0), ToolTip = "Remove",

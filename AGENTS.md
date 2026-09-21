@@ -154,3 +154,27 @@ sftp is text-only, never binaries):
     place, unlinked. NO prod push.
   - Committed in repo: this AGENTS.md section, `windows/installer/`
     (`catalog.iss`), `.gitignore` (`windows/install/`). Nothing running.
+- 2026-09-21 session (Windows emoji clipping, code done + built, visual
+  sign-off still user-driven): toolbar 🔍 (`MainWindow.xaml`, 32→36
+  wide, Padding 0, 14pt, centered), Kobo 🗑 + ★/☆
+  (`SettingsWindow.xaml.cs` `BuildKoboRow`, 30/26→34 wide, Padding 0,
+  14pt, centered; trash kept its left margin). Mirrored to win10
+  (`C:\source\catalog`), `dotnet build` 0 warn/0 err, `dotnet test`
+  30/30. Relaunch `JocalaCatalog.exe` to confirm.
+- Env note 2026-09-21: win11 `~/.ssh/id_ed25519[.pub]` is now the mac
+  keypair (orig backed up as `.win11vm-orig`; `~/.ssh/config` gained the
+  `kobo color` root entry) — win11→kobo `.74` passwordless works, same
+  as win10/mac.
+- 2026-09-21 session (bottom status bar, both platforms; About/Help crash
+  fix): Mac header is controls-only, new always-visible bottom bar
+  (`bottomStatusMessage`/`bottomStatusColor`: Kobo > search counts >
+  library counts; window 892x818); Windows `StatusText` moved to
+  `DockPanel.Dock="Bottom"`, toolbar `ResultsText` deleted; `help.html`
+  wording both copies. Rebuilt Mac from scratch, signed + notarized
+  Accepted + stapled, `spctl` accepted — but first rebuild crashed on
+  About open (`Bundle.module` trap, missing SPM resource bundle):
+  assembly must copy `build/release/JocalaCatalogSwift_CatalogSwiftApp.bundle`
+  into `Contents/Resources/` (recipe fixed in `README.md`), then re-sign +
+  re-notarize. About + Help user-verified. Windows mirrored to win10,
+  `dotnet build` 0/0, `dotnet test` 30/30. `.build/` removed — `build/`
+  is the only build location (`--scratch-path build/check` for checks).

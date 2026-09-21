@@ -85,7 +85,9 @@
         <!-- Toolbar (macOS ContentView header parity) -->
         <Border DockPanel.Dock="Top" Background="{DynamicResource AppPanelBackground}" Padding="4">
             <StackPanel Orientation="Horizontal">
-                <Button Content="🔍" Width="32" Click="Search_Click" ToolTip="Search Books"/>
+                <Button Content="🔍" Width="36" Padding="0" FontSize="14"
+                         HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                         Click="Search_Click" ToolTip="Search Books"/>
                 <Button Content="Reload" Margin="4,0,0,0" Click="Reload_Click"/>
                 <Button Content="Settings" Margin="4,0,0,0" Click="Settings_Click"/>
                 <Separator Margin="6,0" Visibility="Visible"/>
@@ -98,12 +100,16 @@
                              VerticalAlignment="Center" Checked="ViewGrid_Checked" x:Name="GridRadio" IsChecked="True"/>
                 <RadioButton Content="List" GroupName="View" VerticalAlignment="Center" Checked="ViewList_Checked"/>
                 <Button x:Name="LibraryBtn" Content="Library" Margin="8,0,0,0" Visibility="Collapsed"
-                        FontWeight="Bold" Click="Library_Click" ToolTip="Back to library"/>
-                <TextBlock x:Name="ResultsText" VerticalAlignment="Center" Margin="6,0,0,0"
-                           Foreground="{DynamicResource AppMuted}" Visibility="Collapsed"/>
-                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="12,0,4,0"
-                           Foreground="{DynamicResource AppMuted}" TextTrimming="CharacterEllipsis"/>
+                         FontWeight="Bold" Click="Library_Click" ToolTip="Back to library"/>
             </StackPanel>
+        </Border>
+
+        <!-- Bottom status bar: the sole landing spot for gallery status
+             (counts / search results / Kobo messages). Toolbar above is controls-only.
+             x:Name kept as StatusText so the code-behind binding is untouched. -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource AppPanelBackground}" Padding="12,4">
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center"
+                       Foreground="{DynamicResource AppMuted}" TextTrimming="CharacterEllipsis"/>
         </Border>
 
         <!-- Loading -->

@@ -784,14 +784,8 @@ struct ContentView: View {
                         Button("Library") { exitSearchMode() }
                             .buttonStyle(.borderedProminent)
                             .help("Back to library")
-                        Text("\(searchResults.count + seriesResults.count) results").foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if !store.koboStatus.isEmpty {
-                        Text(store.koboStatus).font(.caption).foregroundStyle(store.koboStatus.hasPrefix("Opened") ? .green : .orange).lineLimit(1).truncationMode(.tail).frame(maxWidth: 320, alignment: .trailing)
-                    } else {
-                        Text(store.modeCountText()).foregroundStyle(.secondary)
-                    }
                 }.padding(2).background(.bar)
                 if isSearchMode {
                     searchResultsContent
@@ -807,6 +801,19 @@ struct ContentView: View {
                 } else {
                     modeContent
                 }
+                Divider()
+                // Bottom status bar: the sole landing spot for gallery status.
+                // Kobo progress/success/failure wins; search counts next; idle shows library counts.
+                HStack(spacing: 8) {
+                    Text(bottomStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(bottomStatusColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer()
+                }
+                .padding(.horizontal, 12).padding(.vertical, 4)
+                .background(.bar)
             }.navigationTitle("Jocala Catalog").onAppear{ store.load() }
             .onChange(of: store.browseMode) { _, _ in
                 store.clampSortOrder()
@@ -897,7 +904,7 @@ struct ContentView: View {
                 }
             } message: { Text("Install a tiny, reversible fix?") }
             .onReceive(NotificationCenter.default.publisher(for: .importedFoldersChanged).debounce(for: .milliseconds(500), scheduler: RunLoop.main)) { _ in if !isSearchMode { store.load() } }
-        }.frame(minWidth:892, maxWidth:892, minHeight:794, maxHeight:794)
+        }.frame(minWidth:892, maxWidth:892, minHeight:818, maxHeight:818)
     }
 
     @ViewBuilder
@@ -1012,6 +1019,19 @@ struct ContentView: View {
         case .series: return "No series"
         case .tags: return "No tags"
         }
+    }
+    /// Bottom status bar text: transient Kobo message wins, then search
+    /// counts, then the idle library counts (bar never collapses).
+    private var bottomStatusMessage: String {
+        if !store.koboStatus.isEmpty { return store.koboStatus }
+        if isSearchMode { return "\(searchResults.count + seriesResults.count) results" }
+        return store.modeCountText()
+    }
+    private var bottomStatusColor: Color {
+        if !store.koboStatus.isEmpty {
+            return store.koboStatus.hasPrefix("Opened") ? .green : .orange
+        }
+        return .secondary
     }
     private func openBook(_ book: CatalogBook) {
         selectedBook = book
