@@ -188,6 +188,18 @@ pcall(function() Handoff:init() end)
         let logLine = out.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400)
         let koboIP = UserDefaults.standard.string(forKey: "kobo_ip") ?? ""
         ReaderLog.shared.i("Kobo", "open query='\(query)' ip=\(koboIP) exit=\(code) out='\(logLine)'")
+        // Wrong-password note: auth rejection while a password is configured
+        // for this IP means the stored password is bad — say so explicitly
+        // instead of the generic failure text. Without a configured password
+        // the same rejection means key auth failed (different problem).
+        if KoboSync.isAuthFailure(output: out, code: code), !koboIP.isEmpty,
+           KoboSync.koboSSHPassword(forIP: koboIP) != nil {
+            let msg = "SSH password rejected for \(koboIP) — check Settings → Kobo."
+            ReaderLog.shared.i("Kobo", "auth failure ip=\(koboIP)")
+            store?.koboError = msg
+            store?.koboStatus = msg
+            return
+        }
         let err = out.trimmingCharacters(in: .whitespacesAndNewlines)
         let short = err.isEmpty ? "exit \(code)" : String(err.prefix(400))
         // Popup for any communication failure (sleeping, timeout, etc.)
@@ -237,6 +249,10 @@ pcall(function() Handoff:init() end)
             // 1. Quick reachability: ssh echo ok with 5s timeout
             let probe = sshSync(ip: ip, remoteCmd: "echo ok", timeout: 5)
             if probe.code != 0 || !probe.output.lowercased().contains("ok") {
+                if KoboSync.isAuthFailure(output: probe.output, code: probe.code),
+                   KoboSync.koboSSHPassword(forIP: ip) != nil {
+                    return .failed("SSH password rejected for \(ip) — check Settings → Kobo.")
+                }
                 let hint = probe.output.isEmpty ? "Kobo is sleeping or unreachable at \(ip) — press power button to wake, then try again." : probe.output
                 let msg = hint.contains("sleeping") ? hint : "Kobo is sleeping or unreachable at \(ip) — press power button to wake.\n\(hint)"
                 return .failed(msg)
@@ -355,7 +371,14 @@ pcall(function() Handoff:init() end)
     private static func sshSync(ip: String, remoteCmd: String, timeout: Int) -> (output: String, code: Int32) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        p.arguments = ["-T", "-o", "ConnectTimeout=\(timeout)", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "root@\(ip)"]
+        let (sshArgs, sshEnv, askpassCleanup) = KoboSync.koboSSHInvocation(ip: ip, timeout: timeout, password: KoboSync.koboSSHPassword(forIP: ip))
+        defer { askpassCleanup() }
+        p.arguments = sshArgs
+        if !sshEnv.isEmpty {
+            var e = ProcessInfo.processInfo.environment
+            e.merge(sshEnv) { _, new in new }
+            p.environment = e
+        }
         let input = Pipe()
         let tmpOut = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".koboout")
         FileManager.default.createFile(atPath: tmpOut.path, contents: nil)
@@ -879,6 +902,14 @@ struct ContentView: View {
                     Text("\(seriesResults.count) series with \"\(seriesResultsTagName)\"")
                         .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 8)
                     ScrollView {
+                        if viewMode == .list {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                ForEach(seriesResults) { s in
+                                    seriesSearchListRow(s)
+                                    Divider().padding(.leading, 64)
+                                }
+                            }.padding(.vertical, 8)
+                        } else {
                         HStack(spacing: 0) {
                             Spacer(minLength: 0)
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
@@ -904,23 +935,21 @@ struct ContentView: View {
                                     Text("\(s.bookCount) books").font(.caption2).foregroundStyle(.secondary)
                                 }
                                 .contentShape(Rectangle())
-                                .onTapGesture {
-                                    Task {
-                                        do {
-                                            let books = try await SmbCatalogDB.shared.booksBySeries(id: s.id)
-                                            let results = books.map { b in SearchResult(filePath: b.path, fileName: URL(fileURLWithPath: b.path).lastPathComponent, bookId: b.id, title: b.title, author: b.author, series: s.name, tags: [], authorSort: b.authorSort) }
-                                            await MainActor.run { searchResults = results; seriesResults = [] ; loadSearchThumbnails() }
-                                        } catch {
-                                            await MainActor.run { store.dbError = error.localizedDescription }
-                                        }
+                                .onHover { inside in
+                                    if inside {
+                                        NSCursor.pointingHand.push()
+                                    } else {
+                                        NSCursor.pop()
                                     }
                                 }
+                                .onTapGesture { drillSearchSeries(s) }
                             }
                         }
                         .frame(width: 784)
                         Spacer(minLength: 0)
                     }
                     .padding(2)
+                        }
                     }
                 }
             } else if searchResults.isEmpty {
@@ -935,6 +964,14 @@ struct ContentView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
+                    if viewMode == .list {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(searchResults) { item in
+                                searchResultListRow(item)
+                                Divider().padding(.leading, 64)
+                            }
+                        }.padding(.vertical, 8)
+                    } else {
                     HStack(spacing: 0) {
                         Spacer(minLength: 0)
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
@@ -946,6 +983,7 @@ struct ContentView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(2)
+                    }
                 }
             }
         }
@@ -1028,6 +1066,13 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside {
+                                NSCursor.pointingHand.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
                         .onTapGesture { openBook(book) }
                         .task(id: book.path) { await store.loadThumbnail(for: book) }
                         Divider().padding(.leading, 64)
@@ -1072,6 +1117,13 @@ struct ContentView: View {
                             Text("\(tag.bookCount) books").font(.caption2).foregroundStyle(.secondary)
                         }
                         .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside {
+                                NSCursor.pointingHand.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
                         .onTapGesture { store.drillTag(tag) }
                     }
                 }
@@ -1092,6 +1144,13 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside {
+                                NSCursor.pointingHand.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
                         .onTapGesture { store.drillTag(tag) }
                         Divider().padding(.leading, 56)
                     }
@@ -1117,6 +1176,13 @@ struct ContentView: View {
         }
         .help("\(author.name)\n\(author.bookCount) books\nClick to browse")
         .contentShape(Rectangle())
+        .onHover { inside in
+            if inside {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
         .onTapGesture { store.drillAuthor(author) }
     }
     private func seriesTile(_ s: SeriesSummary) -> some View {
@@ -1137,6 +1203,13 @@ struct ContentView: View {
         }
         .help("\(s.name)\n\(s.bookCount) books\nClick to browse")
         .contentShape(Rectangle())
+        .onHover { inside in
+            if inside {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
         .onTapGesture { store.drillSeries(s) }
     }
     private func tileThumbnail(for path: String) async {
@@ -1212,17 +1285,56 @@ struct ContentView: View {
                 // BookInfoView reads store.thumbnails — mirror it there.
                 store.thumbnails[path] = img
             },
-            onSelect: { tapped in
-                let book = CatalogBook(id: tapped.bookId ?? 0, title: tapped.title ?? tapped.fileName, author: tapped.author ?? "Unknown", path: tapped.filePath, hasCover: true, coverHash: nil)
-                searchSelectedBook = book
-                selectedDetail = nil
-                isLoadingDetail = true
-                Task { selectedDetail = await store.fetchDetail(for: book); isLoadingDetail = false }
-                // Ensure the cover is in store.thumbnails for BookInfoView even if
-                // the cell task hasn't finished yet.
-                Task { await store.loadThumbnail(for: book) }
-            }
+            onSelect: selectSearchResult
         )
+    }
+
+    private func searchResultListRow(_ item: SearchResult) -> some View {
+        SearchResultRow(
+            item: item, store: store,
+            cached: searchThumbnails[item.filePath] ?? store.thumbnails[item.filePath],
+            onImage: { path, img in
+                searchThumbnails[path] = img
+                store.thumbnails[path] = img
+            },
+            onSelect: selectSearchResult
+        )
+    }
+
+    private func seriesSearchListRow(_ s: SeriesSummary) -> some View {
+        SeriesSearchRow(
+            s: s, store: store,
+            cached: s.firstBookPath.flatMap { searchThumbnails[$0] ?? store.thumbnails[$0] },
+            load: { path in await searchThumbnail(for: path) },
+            onImage: { path, img in
+                searchThumbnails[path] = img
+                store.thumbnails[path] = img
+            },
+            onDrill: drillSearchSeries
+        )
+    }
+
+    private func selectSearchResult(_ tapped: SearchResult) {
+        let book = CatalogBook(id: tapped.bookId ?? 0, title: tapped.title ?? tapped.fileName, author: tapped.author ?? "Unknown", path: tapped.filePath, hasCover: true, coverHash: nil)
+        searchSelectedBook = book
+        selectedDetail = nil
+        isLoadingDetail = true
+        Task { selectedDetail = await store.fetchDetail(for: book); isLoadingDetail = false }
+        // Ensure the cover is in store.thumbnails for BookInfoView even if
+        // the cell task hasn't finished yet.
+        Task { await store.loadThumbnail(for: book) }
+    }
+
+    private func drillSearchSeries(_ s: SeriesSummary) {
+        Task {
+            do {
+                let books = try await SmbCatalogDB.shared.booksBySeries(id: s.id)
+                let results = books.map { b in SearchResult(filePath: b.path, fileName: URL(fileURLWithPath: b.path).lastPathComponent, bookId: b.id, title: b.title, author: b.author, series: s.name, tags: [], authorSort: b.authorSort) }
+                await MainActor.run { searchResults = results; seriesResults = [] ; loadSearchThumbnails() }
+            } catch {
+                await MainActor.run { store.dbError = error.localizedDescription }
+            }
+        }
     }
 
     // Search result cell with its OWN cover state: the cell re-renders itself
@@ -1255,7 +1367,110 @@ struct ContentView: View {
                 Text(item.author ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1).frame(width: 187)
             }
             .contentShape(Rectangle())
+            .onHover { inside in
+                if inside {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
             .onTapGesture { onSelect(item) }
+        }
+    }
+
+    // Search list-mode row: horizontal layout mirroring the library Books
+    // list rows (cover thumb + title/author/path + Details). Own @State
+    // image like SearchResultCell so burst arrivals re-render the row.
+    struct SearchResultRow: View {
+        let item: SearchResult
+        let store: CatalogStore
+        let cached: NSImage?
+        let onImage: (String, NSImage) -> Void
+        let onSelect: (SearchResult) -> Void
+        @State private var img: NSImage?
+        var body: some View {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12))
+                    if let img = img ?? cached ?? store.thumbnails[item.filePath] {
+                        Image(nsImage: img).resizable().aspectRatio(contentMode: .fit).frame(width: 107, height: 160)
+                    } else {
+                        Image(systemName: "book.closed").foregroundStyle(.secondary)
+                    }
+                }.frame(width: 107, height: 160).clipShape(RoundedRectangle(cornerRadius: 4))
+                    .task(id: item.filePath) {
+                        if img != nil { return }
+                        if let loaded = await ThumbnailService.thumbnail(for: item.filePath, coverHash: nil) {
+                            img = loaded
+                            await MainActor.run { onImage(item.filePath, loaded) }
+                        }
+                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title ?? item.fileName).font(.body).lineLimit(1)
+                    Text(item.author ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(item.filePath).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                Button("Details") { onSelect(item) }.controlSize(.small)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .onTapGesture { onSelect(item) }
+        }
+    }
+
+    // Series search list-mode row: cover thumb (or books icon) + name/count.
+    // Loader is injected so the row stays a dumb view over the caller's
+    // smb-guarded thumbnail path.
+    struct SeriesSearchRow: View {
+        let s: SeriesSummary
+        let store: CatalogStore
+        let cached: NSImage?
+        let load: (String) async -> NSImage?
+        let onImage: (String, NSImage) -> Void
+        let onDrill: (SeriesSummary) -> Void
+        @State private var img: NSImage?
+        var body: some View {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12))
+                    if let path = s.firstBookPath, let img = img ?? cached ?? store.thumbnails[path] {
+                        Image(nsImage: img).resizable().aspectRatio(contentMode: .fit).frame(width: 107, height: 160)
+                    } else {
+                        Image(systemName: "books.vertical").foregroundStyle(.secondary)
+                    }
+                }.frame(width: 107, height: 160).clipShape(RoundedRectangle(cornerRadius: 4))
+                    .task(id: s.firstBookPath) {
+                        guard let path = s.firstBookPath, !path.isEmpty, img == nil else { return }
+                        if let loaded = await load(path) {
+                            img = loaded
+                            await MainActor.run { onImage(path, loaded) }
+                        }
+                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(s.name).font(.body).lineLimit(1)
+                    Text("\(s.bookCount) books").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .onTapGesture { onDrill(s) }
         }
     }
 
@@ -1303,6 +1518,16 @@ struct ServerRowView: View {
     }
 }
 
+/// A Kobo eReader endpoint: IP plus optional SSH password, edited in place.
+/// Passwords live in the app password store (KeychainHelper) — never
+/// encoded to UserDefaults alongside the IPs.
+struct KoboDevice: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var ip: String
+    var password: String = ""
+    enum CodingKeys: String, CodingKey { case id, ip }
+}
+
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @AppStorage("library_source") var librarySource = "smb"
@@ -1319,8 +1544,10 @@ struct SettingsView: View {
     @State var smbConnPass: Bool? = nil
     @State var smbDbPass: Bool? = nil
     @AppStorage("kobo_ip") var koboIP: String = ""
-    @State var koboIPs: [String] = []
+    @State var koboDevices: [KoboDevice] = []
     @State var newKoboIP = ""
+    @State private var lastSavedKoboPasswords: [String: String] = [:]
+    @State private var revealedKoboPasswords: Set<UUID> = []
     @State private var koboTestResults: [String: String] = [:]
     @AppStorage("theme_preference") var themePreference = 0
     private let fieldWidth: CGFloat = 380 // ~50 chars visible, unlimited content
@@ -1426,24 +1653,35 @@ struct SettingsView: View {
                     // Kobo IPs
                     GroupBox {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(koboIPs, id: \.self) { ip in
+                            ForEach($koboDevices) { $device in
                                 HStack(spacing: 8) {
                                     Button {
-                                        koboIP = ip
-                                        saveKoboIPs()
-                                        status = "Default Kobo: \(ip)"
+                                        koboIP = device.ip
+                                        saveKoboDevices()
+                                        status = "Default Kobo: \(device.ip)"
                                     } label: {
-                                        Image(systemName: koboIP == ip ? "star.fill" : "star")
-                                            .foregroundStyle(koboIP == ip ? .yellow : .secondary)
-                                    }.buttonStyle(.plain).contentShape(Rectangle()).help(koboIP == ip ? "Default" : "Set as default")
-                                    Text(ip).font(.system(.body, design: .monospaced)).lineLimit(1).frame(width: 180, alignment: .leading).truncationMode(.tail)
+                                        Image(systemName: koboIP == device.ip && !device.ip.isEmpty ? "star.fill" : "star")
+                                            .foregroundStyle(koboIP == device.ip && !device.ip.isEmpty ? .yellow : .secondary)
+                                    }.buttonStyle(.plain).contentShape(Rectangle()).help(koboIP == device.ip ? "Default" : "Set as default")
+                                    TextField("IP address", text: $device.ip).textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced)).autocorrectionDisabled().frame(width: 170)
+                                        .onSubmit { saveKoboDevices() }
+                                    Text("Password").font(.caption)
+                                    Group {
+                                        if revealedKoboPasswords.contains(device.id) { TextField("optional", text: $device.password) }
+                                        else { SecureField("optional", text: $device.password) }
+                                    }.textFieldStyle(.roundedBorder).autocorrectionDisabled().font(.system(.body, design: .monospaced)).frame(width: 110)
+                                        .onSubmit { saveKoboDevices() }
+                                    Button(revealedKoboPasswords.contains(device.id) ? "Hide" : "Show") {
+                                        if revealedKoboPasswords.contains(device.id) { revealedKoboPasswords.remove(device.id) }
+                                        else { revealedKoboPasswords.insert(device.id) }
+                                    }.controlSize(.small)
                                     Spacer()
-                                    Button("Test") { Task { await testKobo(ip: ip) } }.controlSize(.small)
+                                    Button("Test") { Task { await testKobo(ip: device.ip) } }.controlSize(.small)
                                     Button(role: .destructive) {
-                                        removeKobo(ip: ip)
+                                        removeKobo(ip: device.ip)
                                     } label: { Image(systemName: "trash").foregroundStyle(.red) }.buttonStyle(.plain).help("Remove")
                                     Group {
-                                        if let result = koboTestResults[ip] {
+                                        if let result = koboTestResults[device.ip] {
                                             Text(result)
                                                 .font(.caption).fontWeight(.bold)
                                                 .foregroundStyle(result == "Pass" ? .green : .red)
@@ -1462,13 +1700,14 @@ struct SettingsView: View {
                                 .padding(4).background(Color.secondary.opacity(0.06)).cornerRadius(6)
                             }
                             HStack(spacing: 8) {
-                                TextField("Kobo IP address", text: $newKoboIP).textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced)).autocorrectionDisabled().frame(width: 190)
+                                TextField("Kobo IP address", text: $newKoboIP).textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced)).autocorrectionDisabled().frame(width: 170)
                                     .onSubmit { addKobo() }
                                 Button("Add") { addKobo() }.disabled(newKoboIP.trimmingCharacters(in: .whitespaces).isEmpty)
                                 Spacer()
                             }
-                            Text("Multiple Kobo IPs — star selects default for “Read on Kobo”. Ping tests awake.").font(.caption2).foregroundStyle(.secondary)
+                            Text("Star selects default for “Read on Kobo”. IP + password edit in place; password is optional. Ping tests awake.").font(.caption2).foregroundStyle(.secondary)
                         }
+                        .onChange(of: koboDevices) { _, _ in saveKoboDevices() }
                     } label: { Label("Kobo", systemImage: "ipad.landscape").font(.headline) }
 
                     // Appearance — Theme like Search Date: Theme  [Light] [Dark] [System]
@@ -1522,37 +1761,78 @@ struct SettingsView: View {
                 }
             }
         }
-        // Kobo IPs — empty until the user adds their own.
-        if let data = UserDefaults.standard.data(forKey: "kobo_ips"), let arr = try? JSONDecoder().decode([String].self, from: data), !arr.isEmpty {
-            koboIPs = arr
-        } else if !koboIP.isEmpty {
-            koboIPs = [koboIP]
-            saveKoboIPs()
-        } else {
-            koboIPs = []; koboIP = ""
+        // Kobo devices — empty until the user adds their own. Migrates the
+        // legacy [String] list; per-IP passwords come from the app store.
+        var devs: [KoboDevice] = []
+        if let data = UserDefaults.standard.data(forKey: "kobo_ips") {
+            if let d = try? JSONDecoder().decode([KoboDevice].self, from: data) { devs = d }
+            else if let arr = try? JSONDecoder().decode([String].self, from: data) { devs = arr.map { KoboDevice(ip: $0) } }
         }
-        if !koboIPs.contains(koboIP) && !koboIPs.isEmpty { koboIP = koboIPs[0] }
+        if devs.isEmpty && !koboIP.isEmpty { devs = [KoboDevice(ip: koboIP)] }
+        var pwMap = loadKoboPasswordMap()
+        // Migrate the interim single global password onto the default device.
+        if pwMap.isEmpty, let legacy = KeychainHelper.read(account: "kobo"), !legacy.isEmpty {
+            let idx = devs.firstIndex(where: { $0.ip == koboIP }) ?? devs.indices.first
+            if let i = idx { devs[i].password = legacy; pwMap[devs[i].ip] = legacy }
+        }
+        for i in devs.indices where devs[i].password.isEmpty {
+            if let pw = pwMap[devs[i].ip] { devs[i].password = pw }
+        }
+        koboDevices = devs
+        // Force-write the password map here: the change-guard in
+        // saveKoboDevices() can't see this migration (lastSaved is computed
+        // from the same in-memory state, so it compares equal and skips the
+        // write) — and sshSync reads the store, not this state. Without this,
+        // a migrated password shows in the field but is never used.
+        let migratedMap = koboPasswordMap()
+        if !migratedMap.isEmpty,
+           let data = try? JSONEncoder().encode(migratedMap),
+           let s = String(data: data, encoding: .utf8) {
+            KeychainHelper.save(password: s, for: "kobo-passwords")
+        }
+        lastSavedKoboPasswords = migratedMap
+        if !koboDevices.contains(where: { $0.ip == koboIP }) && !koboDevices.isEmpty { koboIP = koboDevices[0].ip }
         status = ""
     }
-    private func saveKoboIPs() {
-        if let data = try? JSONEncoder().encode(koboIPs) { UserDefaults.standard.set(data, forKey: "kobo_ips") }
+    /// { ip: password } for devices with a password — app store only.
+    private func koboPasswordMap() -> [String: String] {
+        Dictionary(uniqueKeysWithValues: koboDevices.compactMap { d -> (String, String)? in
+            let ip = d.ip.trimmingCharacters(in: .whitespacesAndNewlines)
+            return d.password.isEmpty || ip.isEmpty ? nil : (ip, d.password)
+        })
+    }
+    private func loadKoboPasswordMap() -> [String: String] {
+        guard let s = KeychainHelper.read(account: "kobo-passwords"),
+              let d = s.data(using: .utf8),
+              let dict = try? JSONDecoder().decode([String: String].self, from: d) else { return [:] }
+        return dict
+    }
+    private func saveKoboDevices() {
+        if let data = try? JSONEncoder().encode(koboDevices) { UserDefaults.standard.set(data, forKey: "kobo_ips") }
         UserDefaults.standard.set(koboIP, forKey: "kobo_ip")
+        let dict = koboPasswordMap()
+        if dict != lastSavedKoboPasswords {
+            lastSavedKoboPasswords = dict
+            if let data = try? JSONEncoder().encode(dict), let s = String(data: data, encoding: .utf8) {
+                KeychainHelper.save(password: s, for: "kobo-passwords")
+            }
+        }
     }
     private func addKobo() {
         let ip = newKoboIP.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !ip.isEmpty else { return }
-        guard !koboIPs.contains(ip) else { status = "Already exists"; return }
-        koboIPs.append(ip)
+        guard !koboDevices.contains(where: { $0.ip == ip }) else { status = "Already exists"; return }
+        koboDevices.append(KoboDevice(ip: ip))
         if koboIP.isEmpty { koboIP = ip }
-        saveKoboIPs(); newKoboIP = ""; status = "Added \(ip)"
+        saveKoboDevices(); newKoboIP = ""; status = "Added \(ip)"
     }
     private func removeKobo(ip: String) {
-        koboIPs.removeAll { $0 == ip }
+        koboDevices.removeAll { $0.ip == ip }
         koboTestResults.removeValue(forKey: ip)
-        if koboIP == ip { koboIP = koboIPs.first ?? ""; }
-        saveKoboIPs()
-        status = koboIPs.isEmpty ? "No Kobo IPs" : "Removed \(ip)"
-        if koboIP.isEmpty && !koboIPs.isEmpty { koboIP = koboIPs[0]; saveKoboIPs() }
+        if koboIP == ip { koboIP = koboDevices.first?.ip ?? ""; }
+        saveKoboDevices()
+        status = koboDevices.isEmpty ? "No Kobo IPs" : "Removed \(ip)"
+        if koboIP.isEmpty && !koboDevices.isEmpty { koboIP = koboDevices[0].ip; saveKoboDevices() }
     }
     private func browseLocal() {
         let panel = NSOpenPanel()
@@ -1620,7 +1900,7 @@ struct SettingsView: View {
             guard !host.isEmpty, !shareName.isEmpty else {
                 // Kobo default is independent of SMB — persist it even when
                 // SMB validation blocks dismissal, so a star tap is never lost.
-                saveKoboIPs()
+                saveKoboDevices()
                 status = koboIP.isEmpty ? "Enter SMB host and share first"
                     : "Enter SMB host and share first (Kobo default saved: \(koboIP))"
                 return false
@@ -1644,7 +1924,7 @@ struct SettingsView: View {
             let cfg = CalibreLibraryConfig(name: "Main", type: .smb, path: fullPath, isPrimary: true)
             libs.append(cfg); CalibreManager.shared.libraries = libs; CalibreManager.shared.save()
         }
-        saveKoboIPs()
+        saveKoboDevices()
         if librarySource == "local" {
             status = "Saved Local \(cleanLocal.isEmpty ? "(no folder)" : cleanLocal)"
         } else {

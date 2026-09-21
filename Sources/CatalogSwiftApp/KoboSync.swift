@@ -67,6 +67,52 @@ enum KoboSync {
 
     // MARK: - SSH primitives (mirrors KoboLauncher.sshSync conventions)
 
+    /// Password configured in Settings → Kobo for this IP, if any.
+    /// Passwords live in the app password store under `kobo-passwords`
+    /// (KeychainHelper UserDefaults mirror — no login-keychain prompts).
+    static func koboSSHPassword(forIP ip: String) -> String? {
+        guard let s = KeychainHelper.read(account: "kobo-passwords"),
+              let d = s.data(using: .utf8),
+              let dict = try? JSONDecoder().decode([String: String].self, from: d) else { return nil }
+        let pw = dict[ip.trimmingCharacters(in: .whitespacesAndNewlines)] ?? ""
+        return pw.isEmpty ? nil : pw
+    }
+
+    /// argv + environment for a Kobo SSH connection. Password present →
+    /// askpass auth (stdin stays free for the heredoc); absent → BatchMode,
+    /// byte-identical to the legacy key-only invocation. No new dependencies
+    /// (no sshpass): `Process` has no tty, so with SSH_ASKPASS_REQUIRE=force
+    /// ssh uses the helper script. The script is chmod 700 and removed via
+    /// the returned cleanup (call it on every exit path, e.g. `defer`).
+    static func koboSSHInvocation(ip: String, timeout: Int, password: String?) -> (args: [String], env: [String: String], cleanup: () -> Void) {
+        var args = ["-T", "-o", "ConnectTimeout=\(timeout)", "-o", "StrictHostKeyChecking=accept-new"]
+        var env: [String: String] = [:]
+        var cleanup: () -> Void = {}
+        if let pw = password, !pw.isEmpty {
+            let script = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".koboask")
+            let body = "#!/bin/sh\nexec printf '%s' \"$KOBO_SSH_PASS\"\n"
+            if (try? body.write(to: script, atomically: true, encoding: .utf8)) != nil {
+                try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+                args += ["-o", "NumberOfPasswordPrompts=1"]
+                env["SSH_ASKPASS"] = script.path
+                env["SSH_ASKPASS_REQUIRE"] = "force"
+                env["KOBO_SSH_PASS"] = pw
+                cleanup = { try? FileManager.default.removeItem(at: script) }
+            } else {
+                args += ["-o", "BatchMode=yes"]
+            }
+        } else {
+            args += ["-o", "BatchMode=yes"]
+        }
+        args.append("root@\(ip)")
+        return (args, env, cleanup)
+    }
+
+    /// True when ssh output shows an auth rejection (wrong password or key).
+    static func isAuthFailure(output: String, code: Int32) -> Bool {
+        code == 255 && output.localizedCaseInsensitiveContains("Permission denied")
+    }
+
     static func escShell(_ s: String) -> String {
         s.replacingOccurrences(of: "'", with: "'\\''")
     }
@@ -103,7 +149,14 @@ enum KoboSync {
     private static func sshCommon(ip: String, timeout: Int, feed: (Pipe) -> Void) -> (output: String, code: Int32) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        p.arguments = ["-T", "-o", "ConnectTimeout=\(timeout)", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "root@\(ip)"]
+        let (sshArgs, sshEnv, askpassCleanup) = koboSSHInvocation(ip: ip, timeout: timeout, password: koboSSHPassword(forIP: ip))
+        defer { askpassCleanup() }
+        p.arguments = sshArgs
+        if !sshEnv.isEmpty {
+            var e = ProcessInfo.processInfo.environment
+            e.merge(sshEnv) { _, new in new }
+            p.environment = e
+        }
         let input = Pipe()
         let tmpOut = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".kobosync")
         FileManager.default.createFile(atPath: tmpOut.path, contents: nil)

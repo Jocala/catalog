@@ -36,6 +36,10 @@ nightly source tarballs (`/Users/jeff/source/backups/`, e.g. `e34e6e0d.tar` 2026
 
 ## Conventions
 - No hardcoded hosts/ports/credentials; keep diffs small.
+- Mac/Windows parity: every Mac-side feature or behavior change probably needs
+  a Windows mirror in `windows/` (SSH.NET transport, WPF UI) — scope it in the
+  same change, or record it as an explicit todo (e.g. Kobo per-IP SSH passwords:
+  Mac shipped, Windows still key-only).
 - Re-sign + notarize `.app` after ANY bundle change (binary, plist, icns).
 - `Info.plist` must carry `NSLocalNetworkUsageDescription` (else `NWConnection` fails posix 50).
 
@@ -51,3 +55,18 @@ nightly source tarballs (`/Users/jeff/source/backups/`, e.g. `e34e6e0d.tar` 2026
   fine. Packaging/entitlements/plist verified; `tccutil` reset refused by OS.
   Resolved by macOS reboot 2026-09-20 — all well currently.
   Full case file: `~/Desktop/catalog-smb-issue-synopsis.txt`.
+
+## Session status — 2026-09-21 (pre-reboot, UNCOMMITTED)
+- Shipped, all in `build/Jocala Catalog.app` (Dev-ID signed + notarized Accepted +
+  stapled, `spctl` accepted): Kobo per-IP SSH passwords (in-place edit, star
+  first, Show/Hide per row, `KoboDevice` model, passwords in `KeychainHelper`
+  store under `kobo-passwords`, legacy `kobo` migrated on Settings open);
+  askpass password auth in both SSH primitives (`koboSSHInvocation`, no sshpass,
+  `BatchMode` unchanged when empty); wrong-password dialog note
+  ("SSH password rejected for <ip> — check Settings → Kobo"); search-grid
+  hover cursor (`SearchResultCell` now pushes `pointingHand` like `BookCell`).
+- Live-verified 2026-09-21 vs Color `.74`: password `1234` authenticates (`ok`,
+  exit 0).
+- Tree is UNCOMMITTED (`M AGENTS.md`, `M CatalogSwiftApp.swift`, `M KoboSync.swift`
+  on top of `ee7e5bb`); `build/` + `.build/` untracked. Commit on next boot
+  before further changes. Nothing running needs saving — reboot freely.
