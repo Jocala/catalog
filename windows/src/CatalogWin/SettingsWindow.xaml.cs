@@ -135,6 +135,7 @@ public partial class SettingsWindow : Window
             if (e.Key == System.Windows.Input.Key.Enter) CommitIp();
         };
         ipBox.LostFocus += (_, _) => CommitIp();
+        UI.Watermark.SetText(ipBox, "IP address");
         row.Children.Add(ipBox);
 
         row.Children.Add(new TextBlock
@@ -151,6 +152,8 @@ public partial class SettingsWindow : Window
         string initPw = _s.KoboPasswordFor(committed) ?? "";
         passBox.Password = initPw;
         passShow.Text = initPw;
+        UI.Watermark.SetText(passBox, "optional");
+        UI.Watermark.SetText(passShow, "optional");
         bool revealed = _revealedKobo.Contains(committed);
         passBox.Visibility = revealed ? Visibility.Collapsed : Visibility.Visible;
         passShow.Visibility = revealed ? Visibility.Visible : Visibility.Collapsed;

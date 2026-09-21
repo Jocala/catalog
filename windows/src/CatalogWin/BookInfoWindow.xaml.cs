@@ -65,11 +65,11 @@ public partial class BookInfoWindow : Window
 
     private async void Read_Click(object sender, RoutedEventArgs e)
     {
-        KoboStatus.Text = "Opening on Kobo…";
+        SetKoboStatus("Opening on Kobo…");
         string? err = null;
         await KoboLauncher.RunKoboAsync(
             $"{_book.Author} {_book.Title}", _book.Title, _book.Author,
-            onStatus: s => Dispatcher.Invoke(() => KoboStatus.Text = s),
+            onStatus: s => Dispatcher.Invoke(() => SetKoboStatus(s)),
             onError: msg => err = msg);
         if (err is null)
         {
@@ -80,6 +80,16 @@ public partial class BookInfoWindow : Window
         {
             MessageBox.Show(err, "Kobo", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    private void SetKoboStatus(string s)
+    {
+        // Footer color parity with macOS: success green, other Kobo
+        // activity orange (idle text stays muted).
+        KoboStatus.Text = s;
+        KoboStatus.Foreground = s.StartsWith("Opened")
+            ? System.Windows.Media.Brushes.Green
+            : System.Windows.Media.Brushes.Orange;
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

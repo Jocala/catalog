@@ -103,6 +103,13 @@ public partial class MainWindow : Window
         _loadingCombos = false;
 
         StatusText.Text = _store.StatusText;
+        // Bottom-bar color parity with macOS: Kobo activity is colored,
+        // idle counts stay muted.
+        StatusText.Foreground = _store.KoboStatus.StartsWith("Opened")
+            ? System.Windows.Media.Brushes.Green
+            : _store.KoboStatus.Length > 0
+                ? System.Windows.Media.Brushes.Orange
+                : (System.Windows.Media.Brush)FindResource("AppMuted");
         bool searching = _store.IsSearchMode;
         LibraryBtn.Visibility = searching ? Visibility.Visible : Visibility.Collapsed;
 
