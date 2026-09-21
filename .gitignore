@@ -7,3 +7,5 @@ windows/**/bin/
 windows/**/obj/
 windows/**/.vs/
 windows/**/TestResults/
+# Inno installer output (built on win10, staged to debian, never committed)
+windows/install/

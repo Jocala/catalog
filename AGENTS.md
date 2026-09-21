@@ -56,6 +56,52 @@ nightly source tarballs (`/Users/jeff/source/backups/`, e.g. `e34e6e0d.tar` 2026
   Resolved by macOS reboot 2026-09-20 — all well currently.
   Full case file: `~/Desktop/catalog-smb-issue-synopsis.txt`.
 
+## Production release — trigger phrase: "build for production" (TEST SITE ONLY)
+
+Single `VERSION` parameter (currently `1.0`): installer filenames
+`jocala-catalog.$VERSION.dmg` / `jocala-catalog.$VERSION.exe`, page links,
+and size labels all derive from it. No production (`jocala.com`) push —
+staging on debian only; going live is a separate future step.
+
+### Phase A — Mac installer (this Mac, from scratch)
+1. `pgrep -x CatalogSwift` must be empty (never rewrite a running bundle).
+2. Wipe `build/` + `.build/`, full `swift build -c release --scratch-path
+   .../build --package-path ...`, assemble `build/Jocala Catalog.app`
+   (binary + `Info.plist` + `Resources/AppIcon.icns` + `Resources/help.html`
+   + `Resources/donatel.png` + `PkgInfo`), Dev-ID sign
+   (`CatalogSwift.entitlements`, `--options runtime --timestamp`), notarize
+   (`notary-jeff`), staple, `spctl` accept. Canonical flags:
+   `~/.config/opencode/AGENTS.md` § Apple Developer ID signing.
+3. DMG staging dir (baseline, no background art): `Jocala Catalog.app` +
+   `Applications` symlink → `hdiutil create -volname "Jocala Catalog"
+   -srcfolder <stage> -ov -format UDZO jocala-catalog.$VERSION.dmg`.
+   Record the byte size for the download page.
+
+### Phase B — Windows installer (win10, from scratch)
+1. Win10 up (`virsh -c qemu:///system start win10` from debian if needed;
+   primary `192.168.1.170`). Mirror Rust tree + `windows/` per
+   `windows/CATALOG.md`, then fresh `cargo build --release -p catalog-ffi`
+   + `dotnet build CatalogWin.sln -c Release` + `dotnet test`.
+2. Compile `windows/installer/catalog.iss` with `C:\bin\bin\ISCC.exe`
+   (`/DVERSION=$VERSION`): full installer (AppId below, publisher
+   `Jocala Software`, exe + `catalog_ffi.dll` + Release output tree,
+   Start Menu entries, uninstaller), `OutputBaseFilename=jocala-catalog.$VERSION`.
+3. `scp` the installer back to the Mac; record the byte size.
+- Inno AppId (generated 2026-09-21, keep stable across versions):
+  `{E51EB7AD-FEFB-4F3E-BD2C-CA6F49DD4410}`.
+
+### Phase C — test staging (debian, git-tracked, NO prod push)
+Per `~/.config/opencode/jocala-website.md` (Mac→debian via `scp`; MCP
+sftp is text-only, never binaries):
+1. `scp` both installers to `/zstore/source/www/jocala.com/catalog/`
+   (replacing stubs).
+2. `catalog/index.html`: links → `jocala-catalog.$VERSION.dmg/.exe`,
+   size labels → real sizes.
+3. Root `index.html`: Catalog `jl-card` directly after the Adblink card
+   (icon `catalog/images/catalog-icon-512.png`, link `catalog/`).
+4. Commit the working tree on debian; verify
+   `http://192.168.1.39/www/jocala.com/` + `/catalog/` (+ real downloads).
+
 ## Session status — 2026-09-21 (COMMITTED below as stable revert point)
 - Shipped, all in `build/Jocala Catalog.app` (Dev-ID signed + notarized Accepted +
   stapled, `spctl` accepted): Kobo per-IP SSH passwords (in-place edit, star
@@ -82,3 +128,22 @@ nightly source tarballs (`/Users/jeff/source/backups/`, e.g. `e34e6e0d.tar` 2026
 - Mac differential verified live via `app_log.txt` (unchanged Save silent,
   source-change Save reloads); Windows `dotnet build`/`test` user-verified
   on win10.
+- PRODUCTION RELEASE IN PROGRESS (paused 2026-09-21 for MCP timeout fix —
+  see `~/Desktop/mcp-friction-fix-plan.txt`; opencode restart pending).
+  - Phase A DONE: from-scratch release build, signed + notarized Accepted +
+    stapled, smoke-tested (6755 books). DMG at `/tmp/jocala-catalog.1.0.dmg`
+    (4014112 bytes, md5 `62c4d8c9cbce214bcc995f182e779df9`), sig verified
+    inside mounted image. Note: fresh SPM scratch layout is now
+    `build/release/` + `build/out/` (old `build/arm64-apple-macosx/` path
+    in README is stale).
+  - Phase B PAUSED: win10 running, fresh trees mirrored (`catalog.iss` +
+    full Rust tree on VM), `cargo build --release -p catalog-ffi` partial
+    (~673 dep artifacts in `target/release/deps`, no DLL yet — rerun same
+    command, it resumes). Then: dotnet build/test, ISCC
+    (`C:\bin\bin\ISCC.exe /DVERSION=1.0`), scp installer to Mac.
+  - Phase C TODO: scp installers to debian staging, update
+    `catalog/index.html` links (`jocala-catalog.1.0.*`, real sizes: dmg
+    4014112 bytes / ~4 MB) + root card after Adblink, commit site tree,
+    verify test URLs. NO prod push.
+  - UNCOMMITTED in repo: this AGENTS.md section, `windows/installer/`
+    (`catalog.iss`), `.gitignore` (`windows/install/`). Nothing running.
