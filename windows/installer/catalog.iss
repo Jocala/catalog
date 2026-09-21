@@ -1,6 +1,6 @@
 ; Jocala Catalog — Inno Setup installer (full installer: wizard,
 ; Start Menu entries, uninstaller). Compiled on win10 with:
-;   C:\bin\bin\ISCC.exe /DVERSION=1.0 catalog.iss
+;   C:\bin\inno\ISCC.exe /DVERSION=1.0 catalog.iss
 ; VERSION is passed on the command line so releases bump in one place.
 ; AppId generated 2026-09-21 — keep stable across versions (Windows uses
 ; it to identify the product for upgrades/uninstall).
@@ -29,7 +29,9 @@ WizardStyle=modern
 [Files]
 ; Entire Release output tree: JocalaCatalog.exe + catalog_ffi.dll +
 ; .NET deps + Assets\help.html (loose file the viewer opens).
-Source: "..\src\CatalogWin\bin\x64\Release\net9.0-windows\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+; Excludes: WebView2 auto-creates <exe>.WebView2\EBWebView user-data cache
+; on first run inside the output dir — never ship it (profile junk).
+Source: "..\src\CatalogWin\bin\x64\Release\net9.0-windows\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion; Excludes: "*.WebView2"
 
 [Icons]
 Name: "{group}\Jocala Catalog"; Filename: "{app}\JocalaCatalog.exe"
