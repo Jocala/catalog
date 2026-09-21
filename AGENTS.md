@@ -63,44 +63,58 @@ Single `VERSION` parameter (currently `1.0`): installer filenames
 and size labels all derive from it. No production (`jocala.com`) push —
 staging on debian only; going live is a separate future step.
 
-### Phase A — Mac installer (this Mac, from scratch)
-1. `pgrep -x CatalogSwift` must be empty (never rewrite a running bundle).
-2. Wipe `build/` + `.build/`, full `swift build -c release --scratch-path
-   .../build --package-path ...`, assemble `build/Jocala Catalog.app`
-   (binary + `Info.plist` + `Resources/AppIcon.icns` + `Resources/help.html`
-   + `Resources/donatel.png` + `PkgInfo`), Dev-ID sign
-   (`CatalogSwift.entitlements`, `--options runtime --timestamp`), notarize
-   (`notary-jeff`), staple, `spctl` accept. Canonical flags:
-   `~/.config/opencode/AGENTS.md` § Apple Developer ID signing.
-3. DMG staging dir (baseline, no background art): `Jocala Catalog.app` +
-   `Applications` symlink → `hdiutil create -volname "Jocala Catalog"
-   -srcfolder <stage> -ov -format UDZO jocala-catalog.$VERSION.dmg`.
-   Record the byte size for the download page.
+Standard form is **parallel A‖B then C** (proven 2026-09-21, full run
+2m20s; the long pole is Apple's notarization queue, which no parallelism
+can shrink). A and B are independent — different machines, no shared
+state — so they run in the same waves; C needs both installers in hand.
 
-### Phase B — Windows installer (win10, from scratch)
-1. Win10 up (`virsh -c qemu:///system start win10` from debian if needed;
-   primary `192.168.1.170`). Mirror Rust tree + `windows/` per
-   `windows/CATALOG.md`, then fresh `cargo build --release -p catalog-ffi`
-   + `dotnet build CatalogWin.sln -c Release` + `dotnet test`.
-2. Compile `windows/installer/catalog.iss` with `C:\bin\bin\ISCC.exe`
-   (`/DVERSION=$VERSION`): full installer (AppId below, publisher
-   `Jocala Software`, exe + `catalog_ffi.dll` + Release output tree,
-   Start Menu entries, uninstaller), `OutputBaseFilename=jocala-catalog.$VERSION`.
-3. `scp` the installer back to the Mac; record the byte size.
+Preconditions: sources committed (mirror from the fixed commit — a
+mid-release source change must never race the builds); `pgrep -x
+CatalogSwift` empty (never rewrite a running bundle); win10 up (`virsh
+-c qemu:///system start win10` from debian if needed; primary
+`192.168.1.170`).
+
+Prep (fast, sequential): mirror win10 per `windows/CATALOG.md` (windows
+subset tar + Rust `crates/` + `Cargo.toml`/`Cargo.lock`).
+
+Wave 1 — Mac `rm -rf build` + `swift build -c release --scratch-path
+.../build --package-path ...` ‖ win10 extract tar + swap `crates/`.
+
+Wave 2 — Mac assemble `build/Jocala Catalog.app` (binary +
+`Info.plist` + `Resources/AppIcon.icns` + `Resources/help.html` +
+`Resources/donatel.png` + **`build/release/JocalaCatalogSwift_CatalogSwiftApp.bundle`**
+(REQUIRED — without it About/Help trap on `Bundle.module`) +
+`PkgInfo`), Dev-ID sign (`CatalogSwift.entitlements`, `--options runtime
+--timestamp`; canonical flags: `~/.config/opencode/AGENTS.md` § Apple
+Developer ID signing) ‖ win10 `cargo clean -p catalog-ffi && cargo build
+--release -p catalog-ffi`.
+
+Wave 3 — Mac notarize (`notary-jeff`), staple, `spctl` accept ‖ win10
+`dotnet build CatalogWin.sln -c Release` (0/0) + `dotnet test` (all
+pass), copy `catalog_ffi.dll` next to the exe output, confirm no
+`JocalaCatalog.exe.WebView2/` cache and no stray `bin\Release` tree,
+then compile `windows/installer/catalog.iss` with
+`C:\bin\inno\ISCC.exe /DVERSION=$VERSION` (full installer, AppId below,
+publisher `Jocala Software`, `OutputBaseFilename=jocala-catalog.$VERSION`).
+`scp` the exe back to the Mac (`/tmp/jocala-catalog.$VERSION.exe`).
+
+Phase C — test staging (debian, git-tracked, NO prod push), after A‖B:
+DMG staging dir (baseline, no background art): `Jocala Catalog.app` +
+`Applications` symlink → `hdiutil create -volname "Jocala Catalog"
+-srcfolder <stage> -ov -format UDZO jocala-catalog.$VERSION.dmg`; verify
+the sig inside the mounted image. Per
+`~/.config/opencode/jocala-website.md` (Mac→debian via `scp`; MCP sftp
+is text-only, never binaries): `scp` both installers to
+`/zstore/source/www/jocala.com/catalog/`; `catalog/index.html` links →
+`jocala-catalog.$VERSION.dmg/.exe`, size labels → real sizes (skip if
+the rounded MB labels still hold); root `index.html` Catalog `jl-card`
+directly after the Adblink card (one-time, already placed). Commit the
+working tree on debian (message carries both byte sizes); verify
+`http://192.168.1.39/www/jocala.com/catalog/` + both downloads 200 with
+exact byte sizes.
+
 - Inno AppId (generated 2026-09-21, keep stable across versions):
   `{E51EB7AD-FEFB-4F3E-BD2C-CA6F49DD4410}`.
-
-### Phase C — test staging (debian, git-tracked, NO prod push)
-Per `~/.config/opencode/jocala-website.md` (Mac→debian via `scp`; MCP
-sftp is text-only, never binaries):
-1. `scp` both installers to `/zstore/source/www/jocala.com/catalog/`
-   (replacing stubs).
-2. `catalog/index.html`: links → `jocala-catalog.$VERSION.dmg/.exe`,
-   size labels → real sizes.
-3. Root `index.html`: Catalog `jl-card` directly after the Adblink card
-   (icon `catalog/images/catalog-icon-512.png`, link `catalog/`).
-4. Commit the working tree on debian; verify
-   `http://192.168.1.39/www/jocala.com/` + `/catalog/` (+ real downloads).
 
 ## Session status — 2026-09-21 (COMMITTED below as stable revert point)
 - Shipped, all in `build/Jocala Catalog.app` (Dev-ID signed + notarized Accepted +
