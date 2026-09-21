@@ -128,22 +128,29 @@ sftp is text-only, never binaries):
 - Mac differential verified live via `app_log.txt` (unchanged Save silent,
   source-change Save reloads); Windows `dotnet build`/`test` user-verified
   on win10.
-- PRODUCTION RELEASE IN PROGRESS (paused 2026-09-21 for MCP timeout fix —
-  see `~/Desktop/mcp-friction-fix-plan.txt`; opencode restart pending).
+- PRODUCTION RELEASE 1.0 DONE 2026-09-21 (TEST SITE ONLY, no prod push).
   - Phase A DONE: from-scratch release build, signed + notarized Accepted +
     stapled, smoke-tested (6755 books). DMG at `/tmp/jocala-catalog.1.0.dmg`
     (4014112 bytes, md5 `62c4d8c9cbce214bcc995f182e779df9`), sig verified
     inside mounted image. Note: fresh SPM scratch layout is now
     `build/release/` + `build/out/` (old `build/arm64-apple-macosx/` path
     in README is stale).
-  - Phase B PAUSED: win10 running, fresh trees mirrored (`catalog.iss` +
-    full Rust tree on VM), `cargo build --release -p catalog-ffi` partial
-    (~673 dep artifacts in `target/release/deps`, no DLL yet — rerun same
-    command, it resumes). Then: dotnet build/test, ISCC
-    (`C:\bin\bin\ISCC.exe /DVERSION=1.0`), scp installer to Mac.
-  - Phase C TODO: scp installers to debian staging, update
-    `catalog/index.html` links (`jocala-catalog.1.0.*`, real sizes: dmg
-    4014112 bytes / ~4 MB) + root card after Adblink, commit site tree,
-    verify test URLs. NO prod push.
-  - UNCOMMITTED in repo: this AGENTS.md section, `windows/installer/`
+  - Phase B DONE: resumed `cargo build --release -p catalog-ffi` on win10 →
+    `catalog_ffi.dll` 16630784 bytes; `dotnet build` 0 warn/0 err, `dotnet
+    test` 30/30 pass; ISCC (`C:\bin\inno\ISCC.exe /DVERSION=1.0`, note:
+    actual path is `C:\bin\inno\`, not `C:\bin\bin\`) →
+    `C:\source\catalog\install\jocala-catalog.1.0.exe`, scp'd to Mac
+    (`/tmp/jocala-catalog.1.0.exe`, 16650227 bytes, md5
+    `ffa4957df2fc9dc56406484c75544eb0`). `catalog.iss` now carries
+    `Excludes: "*.WebView2"` — first compile shipped the VM's EBWebView
+    profile cache (History/Cookies!), caught on review, cache deleted +
+    recompiled clean. Always delete `JocalaCatalog.exe.WebView2/` from the
+    Release tree before ISCC (it regenerates on every local app run).
+  - Phase C DONE: both installers scp'd to debian staging
+    (`/zstore/source/www/jocala.com/catalog/jocala-catalog.1.0.*`),
+    `catalog/index.html` links + sizes (4 MB dmg / 16 MB exe), root
+    Catalog card after Adblink, site tree committed (`d214530`), test URLs
+    verified 200 with exact byte sizes. Old `catalog.1.0.*` stubs left in
+    place, unlinked. NO prod push.
+  - Committed in repo: this AGENTS.md section, `windows/installer/`
     (`catalog.iss`), `.gitignore` (`windows/install/`). Nothing running.
