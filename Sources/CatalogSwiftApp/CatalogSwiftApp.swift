@@ -726,6 +726,8 @@ struct ContentView: View {
     @StateObject var store = CatalogStore()
     @State var showSettings = false
     @State var showSearchForm = false
+    @State var showAbout = false
+    @State var showHelp = false
     @State var isSearchMode = false
     @State var searchResults: [SearchResult] = []
     @State var seriesResults: [SeriesSummary] = []
@@ -818,6 +820,10 @@ struct ContentView: View {
                 if store.drilledKind == nil && !isSearchMode { store.load() }
             }
             .sheet(isPresented: $showSettings) { SettingsView().frame(width: 620).fixedSize(horizontal: false, vertical: true).background(Color.red.opacity(0.02)) }
+            .sheet(isPresented: $showAbout) { AboutView() }
+            .sheet(isPresented: $showHelp) { HelpView() }
+            .onReceive(NotificationCenter.default.publisher(for: .showAbout)) { _ in showAbout = true }
+            .onReceive(NotificationCenter.default.publisher(for: .showHelp)) { _ in showHelp = true }
             .sheet(isPresented: $showSearchForm) {
                 SearchFormSheet(onSearch: { results in
                     enterSearchMode(with: results)
@@ -937,9 +943,9 @@ struct ContentView: View {
                                 .contentShape(Rectangle())
                                 .onHover { inside in
                                     if inside {
-                                        NSCursor.pointingHand.push()
+                                        NSCursor.pointingHand.set()
                                     } else {
-                                        NSCursor.pop()
+                                        NSCursor.arrow.set()
                                     }
                                 }
                                 .onTapGesture { drillSearchSeries(s) }
@@ -1068,9 +1074,9 @@ struct ContentView: View {
                         .contentShape(Rectangle())
                         .onHover { inside in
                             if inside {
-                                NSCursor.pointingHand.push()
+                                NSCursor.pointingHand.set()
                             } else {
-                                NSCursor.pop()
+                                NSCursor.arrow.set()
                             }
                         }
                         .onTapGesture { openBook(book) }
@@ -1119,9 +1125,9 @@ struct ContentView: View {
                         .contentShape(Rectangle())
                         .onHover { inside in
                             if inside {
-                                NSCursor.pointingHand.push()
+                                NSCursor.pointingHand.set()
                             } else {
-                                NSCursor.pop()
+                                NSCursor.arrow.set()
                             }
                         }
                         .onTapGesture { store.drillTag(tag) }
@@ -1146,9 +1152,9 @@ struct ContentView: View {
                         .contentShape(Rectangle())
                         .onHover { inside in
                             if inside {
-                                NSCursor.pointingHand.push()
+                                NSCursor.pointingHand.set()
                             } else {
-                                NSCursor.pop()
+                                NSCursor.arrow.set()
                             }
                         }
                         .onTapGesture { store.drillTag(tag) }
@@ -1178,9 +1184,9 @@ struct ContentView: View {
         .contentShape(Rectangle())
         .onHover { inside in
             if inside {
-                NSCursor.pointingHand.push()
+                NSCursor.pointingHand.set()
             } else {
-                NSCursor.pop()
+                NSCursor.arrow.set()
             }
         }
         .onTapGesture { store.drillAuthor(author) }
@@ -1205,9 +1211,9 @@ struct ContentView: View {
         .contentShape(Rectangle())
         .onHover { inside in
             if inside {
-                NSCursor.pointingHand.push()
+                NSCursor.pointingHand.set()
             } else {
-                NSCursor.pop()
+                NSCursor.arrow.set()
             }
         }
         .onTapGesture { store.drillSeries(s) }
@@ -1369,9 +1375,9 @@ struct ContentView: View {
             .contentShape(Rectangle())
             .onHover { inside in
                 if inside {
-                    NSCursor.pointingHand.push()
+                    NSCursor.pointingHand.set()
                 } else {
-                    NSCursor.pop()
+                    NSCursor.arrow.set()
                 }
             }
             .onTapGesture { onSelect(item) }
@@ -1417,9 +1423,9 @@ struct ContentView: View {
             .contentShape(Rectangle())
             .onHover { inside in
                 if inside {
-                    NSCursor.pointingHand.push()
+                    NSCursor.pointingHand.set()
                 } else {
-                    NSCursor.pop()
+                    NSCursor.arrow.set()
                 }
             }
             .onTapGesture { onSelect(item) }
@@ -1465,9 +1471,9 @@ struct ContentView: View {
             .contentShape(Rectangle())
             .onHover { inside in
                 if inside {
-                    NSCursor.pointingHand.push()
+                    NSCursor.pointingHand.set()
                 } else {
-                    NSCursor.pop()
+                    NSCursor.arrow.set()
                 }
             }
             .onTapGesture { onDrill(s) }
@@ -1540,7 +1546,17 @@ struct SettingsView: View {
     @State var calibrePath = ""
     @State var localDir = ""
     @State var status = ""
-    @State var isSyncing = false
+    // Snapshot of the persisted library source, taken in load(). save()
+    // re-reads the library only when these changed — a Kobo/theme-only
+    // save stays free.
+    @State private var savedSource = "smb"
+    @State private var savedLocalDir = ""
+    @State private var savedHost = ""
+    @State private var savedShare = ""
+    @State private var savedCalibrePath = ""
+    @State private var savedUser = ""
+    @State private var savedDomain = ""
+    @State private var savedPass = ""
     @State var smbConnPass: Bool? = nil
     @State var smbDbPass: Bool? = nil
     @AppStorage("kobo_ip") var koboIP: String = ""
@@ -1792,6 +1808,15 @@ struct SettingsView: View {
         }
         lastSavedKoboPasswords = migratedMap
         if !koboDevices.contains(where: { $0.ip == koboIP }) && !koboDevices.isEmpty { koboIP = koboDevices[0].ip }
+        // Snapshot the persisted library source for save()'s reload check.
+        savedSource = librarySource
+        savedLocalDir = localDir
+        savedHost = smbServer
+        savedShare = smbShare
+        savedCalibrePath = calibrePath
+        savedUser = smbUser
+        savedDomain = smbDomain
+        savedPass = smbPass
         status = ""
     }
     /// { ip: password } for devices with a password — app store only.
@@ -1930,13 +1955,29 @@ struct SettingsView: View {
         } else {
             status = "Saved SMB \(host)/\(shareName)/\(metaPath)"
         }
-        // Drop the cached in-memory snapshot and tell the catalog to reload
-        // (same as Reindex) — otherwise the source toggle looks dead until
-        // the user manually hits Reload.
-        Task {
-            await SmbCatalogDB.shared.invalidate()
-            await MainActor.run {
-                NotificationCenter.default.post(name: .importedFoldersChanged, object: nil)
+        // Re-read the library only when the source (or its credentials)
+        // changed — a Kobo/theme-only save stays free. Path fields are
+        // normalized exactly like the edited values above before comparing.
+        var savedLibDir = savedCalibrePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        while savedLibDir.hasPrefix("/") { savedLibDir = String(savedLibDir.dropFirst()) }
+        if !savedLibDir.isEmpty && !savedLibDir.hasSuffix("/") { savedLibDir += "/" }
+        var savedLocal = savedLocalDir.trimmingCharacters(in: .whitespacesAndNewlines)
+        if savedLocal.hasPrefix("file://") { savedLocal = String(savedLocal.dropFirst("file://".count)) }
+        while savedLocal.hasSuffix("/") && savedLocal.count > 1 { savedLocal = String(savedLocal.dropLast()) }
+        let sourceChanged = host != savedHost
+            || shareName != savedShare
+            || libDir != savedLibDir
+            || user != savedUser
+            || domain != savedDomain
+            || pass != savedPass
+            || librarySource != savedSource
+            || cleanLocal != savedLocal
+        if sourceChanged {
+            Task {
+                await SmbCatalogDB.shared.invalidate()
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .importedFoldersChanged, object: nil)
+                }
             }
         }
         return true
@@ -1980,17 +2021,6 @@ struct SettingsView: View {
             }
         }
         catch { await MainActor.run { smbDbPass = false; status = "Fail SMB-database \(error.localizedDescription)" } }
-    }
-    private func sync() async {
-        // Single-database rule: no import/sync — the live database (SMB or
-        // local folder) IS the library. Re-fetch it and refresh the catalog view.
-        let src = UserDefaults.standard.string(forKey: "library_source") ?? "smb"
-        isSyncing = true; status = src == "local" ? "Reading local Calibre…" : "Reading SMB Calibre…"
-        await SmbCatalogDB.shared.invalidate()
-        await MainActor.run {
-            status = src == "local" ? "Refreshed from local Calibre" : "Refreshed from SMB Calibre"; isSyncing = false
-            NotificationCenter.default.post(name: .importedFoldersChanged, object: nil)
-        }
     }
     private func testKobo(ip: String? = nil) async {
         let target = (ip ?? koboIP).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2052,20 +2082,15 @@ struct BookCell: View {
         .contentShape(Rectangle())
         .onHover { inside in
             if inside {
-                NSCursor.pointingHand.push()
+                NSCursor.pointingHand.set()
             } else {
-                NSCursor.pop()
+                NSCursor.arrow.set()
             }
         }
         .onTapGesture { onOpen?() }
         .contextMenu {
             Button("Show Details") { onOpen?() }
             Button("Open on Kobo") { Task { await KoboLauncher.open(book: book, store: store) } }
-            Button("Copy Kobo query") {
-                let q = "\(book.author) \(book.title)"
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(q, forType: .string)
-            }
         }
     }
 }
@@ -2160,9 +2185,27 @@ struct CatalogSwiftApp: App {
             .windowStyle(.titleBar)
             .windowResizability(.contentSize)
             .commands {
-                CommandGroup(after: .appInfo) {
+                // Custom About replaces the standard panel (donation appeal +
+                // PayPal banner). No Services are consumed by this app.
+                CommandGroup(replacing: .appInfo) {
+                    Button("About Jocala Catalog") {
+                        NotificationCenter.default.post(name: .showAbout, object: nil)
+                    }
+                    Divider()
                     Button("Open Data Folder") { NSWorkspace.shared.open(CatalogPaths.base) }.keyboardShortcut("o")
                     Button("Settings…") { NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:")!) }.keyboardShortcut(",")
+                }
+                // Help viewer (internal WKWebView sheet). Same page ships in
+                // the Windows app (WebView2). Replaces the system Help
+                // group: its default "<executable> Help" phantom item
+                // (e.g. "CatalogSwift Help", no help book behind it)
+                // duplicated our entry, and menu-search has nothing to
+                // index in a single-page viewer.
+                CommandGroup(replacing: .help) {
+                    Button("Jocala Catalog Help") {
+                        NotificationCenter.default.post(name: .showHelp, object: nil)
+                    }
+                    .keyboardShortcut("?", modifiers: [.command, .shift])
                 }
             }
     }

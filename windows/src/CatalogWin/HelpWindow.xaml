@@ -1,0 +1,21 @@
+<Window x:Class="CatalogWin.HelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Jocala Catalog Help" Width="800" Height="700"
+        MinWidth="600" MinHeight="450"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Padding="8,6"
+                Background="{DynamicResource AppPanelBackground}">
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="BackBtn" Content="‹ Back" Padding="12,2" Click="Back_Click" IsEnabled="False"/>
+                <Button x:Name="FwdBtn" Content="Forward ›" Padding="12,2" Margin="8,0,0,0" Click="Fwd_Click" IsEnabled="False"/>
+                <Button Content="Close" Padding="12,2" Margin="8,0,0,0" Click="Close_Click" IsCancel="True"/>
+                <TextBlock x:Name="ErrorText" VerticalAlignment="Center" Margin="12,0,0,0"
+                           Foreground="{DynamicResource AppMuted}" Visibility="Collapsed"/>
+            </StackPanel>
+        </Border>
+        <wv2:WebView2 x:Name="HelpView"/>
+    </DockPanel>
+</Window>

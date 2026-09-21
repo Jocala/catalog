@@ -2,7 +2,7 @@
 // All 11 queries use SQL verbatim from Swift (canonical Calibre schema).
 //
 // Snapshot model: always fetch the live metadata.db (SMB or local folder) —
-// no cached bytes are ever served, so new books appear without Reindex.
+// no cached bytes are ever served, so every load sees new books.
 // macOS opens the bytes via sqlite3_deserialize (no file anywhere); the .NET
 // binding has no deserialize API, so SMB bytes go through a session temp file
 // (deleted after each op) opened Mode=ReadOnly. Local opens directly ReadOnly.

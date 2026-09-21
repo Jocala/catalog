@@ -56,7 +56,7 @@ nightly source tarballs (`/Users/jeff/source/backups/`, e.g. `e34e6e0d.tar` 2026
   Resolved by macOS reboot 2026-09-20 — all well currently.
   Full case file: `~/Desktop/catalog-smb-issue-synopsis.txt`.
 
-## Session status — 2026-09-21 (pre-reboot, UNCOMMITTED)
+## Session status — 2026-09-21 (COMMITTED below as stable revert point)
 - Shipped, all in `build/Jocala Catalog.app` (Dev-ID signed + notarized Accepted +
   stapled, `spctl` accepted): Kobo per-IP SSH passwords (in-place edit, star
   first, Show/Hide per row, `KoboDevice` model, passwords in `KeychainHelper`
@@ -67,6 +67,18 @@ nightly source tarballs (`/Users/jeff/source/backups/`, e.g. `e34e6e0d.tar` 2026
   hover cursor (`SearchResultCell` now pushes `pointingHand` like `BookCell`).
 - Live-verified 2026-09-21 vs Color `.74`: password `1234` authenticates (`ok`,
   exit 0).
-- Tree is UNCOMMITTED (`M AGENTS.md`, `M CatalogSwiftApp.swift`, `M KoboSync.swift`
-  on top of `ee7e5bb`); `build/` + `.build/` untracked. Commit on next boot
-  before further changes. Nothing running needs saving — reboot freely.
+- Themes + About/Help viewers (Mac + Windows): `AboutView`/`HelpView`
+  (WKWebView, shared `help.html` + `donatel.png` in `Resources/`), Windows
+  `AboutWindow`/`HelpWindow` (WebView2, mirrored `Assets/`), `UI/` light/dark
+  themes + `Theme.cs`, `AboutTests`/`ThemeTests`.
+- Single Mac Help menu (`CommandGroup(replacing: .help)`, `Cmd+Shift+?` —
+  drops the system "<executable> Help" phantom); in-HTML `✕ Close`
+  (`catalog:close` intercepted by both viewers).
+- Save reloads iff the source changed: Mac snapshots persisted source fields
+  at sheet open and posts reload only on host/share/path/user/domain/password/
+  source/local-dir difference; Windows mirrors via `SettingsChanged` flag +
+  gated `LoadAsync()`. Reindex buttons deleted both platforms; toolbar Reload
+  intentionally kept (sole re-read for Calibre-side additions).
+- Mac differential verified live via `app_log.txt` (unchanged Save silent,
+  source-change Save reloads); Windows `dotnet build`/`test` user-verified
+  on win10.

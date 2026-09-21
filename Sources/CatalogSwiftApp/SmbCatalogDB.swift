@@ -129,7 +129,7 @@ actor SmbCatalogDB {
     func invalidate() {
         // Pure-direct mode (B): no snapshot cache is retained, so there is
         // nothing to drop. Kept as a no-op so existing call sites
-        // (Settings Save/Reindex, error-dialog Retry) still compile.
+        // (Settings Save, error-dialog Retry) still compile.
         cachedData = nil
         cachedKey = nil
     }
@@ -181,8 +181,8 @@ actor SmbCatalogDB {
 
     private func snapshot() async throws -> (LibraryTarget, Data) {
         // Pure-direct mode (B): always fetch the live metadata.db — from SMB
-        // or from the local folder. No cached bytes are ever served, so newly
-        // added books (e.g. a new series) are visible without Reindex/restart.
+        // or from the local folder. No cached bytes are ever served, so every
+        // load sees newly added books (e.g. a new series).
         // The cachedData/cachedKey fields are retained only so invalidate()
         // keeps compiling; they are never read here.
         let t = try resolveTarget()

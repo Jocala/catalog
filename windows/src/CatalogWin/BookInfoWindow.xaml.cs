@@ -14,6 +14,7 @@ public partial class BookInfoWindow : Window
     public BookInfoWindow(CatalogBook book, CatalogStore store)
     {
         InitializeComponent();
+        UI.Theme.ApplyCurrent();
         _book = book;
         _store = store;
         TitleText.Text = book.Title;

@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        UI.Theme.ApplyCurrent();
         // Data root (covers/thumbnails caches) — nothing else is created here:
         // no library.db, no Books tree (single-DB rule).
         _ = AppPaths.CoversDir;
@@ -187,10 +188,42 @@ public partial class MainWindow : Window
 
     private void Settings_Click(object sender, RoutedEventArgs e) => OpenSettings();
 
+    private void OpenDataFolder_Click(object sender, RoutedEventArgs e)
+    {
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = AppPaths.Base,
+            UseShellExecute = true,
+        });
+    }
+
+    private void Exit_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
+
+    // macOS WindowGroup parity: File > New Window (Ctrl+N) opens another
+    // library window with its own store. Shutdown stays OnLastWindowClose.
+    private void NewWindow_Executed(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+    {
+        new MainWindow().Show();
+    }
+
+    private void About_Click(object sender, RoutedEventArgs e)
+    {
+        var w = new AboutWindow { Owner = this };
+        w.ShowDialog();
+    }
+
+    // Same help.html ships in the Mac app (Sources/CatalogSwiftApp/Resources).
+    private void Help_Click(object sender, RoutedEventArgs e)
+    {
+        new HelpWindow { Owner = this }.Show();
+    }
+
     private void OpenSettings()
     {
         var w = new SettingsWindow { Owner = this };
-        if (w.ShowDialog() == true)
+        // Save re-reads only when the library source (or its credentials)
+        // changed — Kobo/theme-only saves stay free (Mac parity).
+        if (w.ShowDialog() == true && w.SettingsChanged)
             _ = _store.LoadAsync();
     }
 
@@ -353,12 +386,6 @@ public partial class MainWindow : Window
     {
         if (ContextItem(sender) is UI.TileItem item && item.Kind == "book")
             await _store.OpenOnKoboAsync(ToCatalogBook(item));
-    }
-
-    private void CtxCopyQuery_Click(object sender, RoutedEventArgs e)
-    {
-        if (ContextItem(sender) is UI.TileItem item)
-            Clipboard.SetText($"{item.Subtitle} {item.Title}");
     }
 
     private void DrillBack_Click(object sender, RoutedEventArgs e)

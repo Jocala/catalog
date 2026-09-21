@@ -203,8 +203,8 @@ public static class SmbReader
             server.Domain, root));
     }
 
-    /// Fetch the live metadata.db bytes — always fresh, never cached, so newly
-    /// added books are visible without Reindex/restart (pure-direct mode B).
+    /// Fetch the live metadata.db bytes — always fresh, never cached, so every
+    /// load sees newly added books (pure-direct mode B).
     public static async Task<(LibraryTarget Target, byte[] Data)> SnapshotAsync(AppSettings? settings = null)
     {
         LibraryTarget t = ResolveTarget(settings ?? SettingsStore.Load());

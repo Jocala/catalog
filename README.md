@@ -53,6 +53,9 @@ swift build -c release --scratch-path /Users/jeff/source/catalog/build \
 #   open "/Users/jeff/source/catalog/build/Jocala Catalog.app"
 ```
 Do NOT copy to `~/Desktop`. Bundle ID `com.jocala.catalog`.
+Never rewrite `build/Jocala Catalog.app` while it is running (replacing a
+running signed binary kills it with a CODESIGNING Invalid Page crash —
+hit 2026-09-21): check `pgrep -x CatalogSwift` first.
 Entitlements: `network.client=true` only (SMB/Kobo). `Info.plist` must carry
 `NSLocalNetworkUsageDescription` or every `NWConnection` fails with posix 50.
 

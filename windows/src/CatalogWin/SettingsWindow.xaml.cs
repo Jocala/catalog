@@ -17,9 +17,24 @@ public partial class SettingsWindow : Window
     private readonly HashSet<string> _revealedKobo = new();
     private readonly Dictionary<string, string> _koboTestResults = new();
 
+    /// True when Save persisted a changed library source (or its
+    /// credentials) — MainWindow re-reads only then, so Kobo/theme-only
+    /// saves stay free (Mac parity).
+    public bool SettingsChanged { get; private set; }
+    // Snapshot of the persisted library source, taken at construction.
+    private string _origSource = "smb";
+    private string _origLocalDir = "";
+    private string _origHost = "";
+    private string _origShare = "";
+    private string _origCalibre = "";
+    private string _origUser = "";
+    private string _origDomain = "";
+    private string _origPass = "";
+
     public SettingsWindow()
     {
         InitializeComponent();
+        UI.Theme.ApplyCurrent();
         _s = SettingsStore.Load();
         if (_s.LibrarySource == "local") SrcLocal.IsChecked = true; else SrcSmb.IsChecked = true;
         LocalDirBox.Text = _s.LocalLibraryDir;
@@ -38,6 +53,15 @@ public partial class SettingsWindow : Window
         };
         ThemeBox.SelectedIndex = Math.Clamp(_s.ThemePreference, 0, 2);
         UpdateSourceEnabled();
+        // Snapshot the persisted library source for Save_Click's reload check.
+        _origSource = _s.LibrarySource;
+        _origLocalDir = SettingsStore.NormalizedLocalDir(_s.LocalLibraryDir);
+        _origHost = srv?.Host ?? "";
+        _origShare = srv?.Shares?.FirstOrDefault()?.Name ?? "";
+        _origCalibre = (srv?.Shares?.FirstOrDefault()?.CalibreMetadataPath ?? "").Replace('\\', '/').TrimStart('/');
+        _origUser = srv?.User ?? "";
+        _origDomain = srv?.Domain ?? "";
+        _origPass = host.Length > 0 ? _s.PasswordFor(host) ?? "" : "";
     }
 
     // macOS KoboDevice rows parity: star (default) + editable IP +
@@ -329,12 +353,6 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private void Reindex_Click(object sender, RoutedEventArgs e)
-    {
-        CalibreDb.Shared.Invalidate();
-        DialogResult = true; // main window reloads
-    }
-
     private void OpenData_Click(object sender, RoutedEventArgs e)
     {
         Process.Start(new ProcessStartInfo
@@ -369,7 +387,20 @@ public partial class SettingsWindow : Window
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         var s = DraftSettings();
+        // Re-read the library only when the source (or its credentials)
+        // changed — a Kobo/theme-only save stays free (Mac parity).
+        var srv = s.SmbServers.FirstOrDefault();
+        string pass = PassShowBox.Visibility == Visibility.Visible ? PassShowBox.Text : PassBox.Password;
+        SettingsChanged = s.LibrarySource != _origSource
+            || s.LocalLibraryDir != _origLocalDir
+            || (srv?.Host ?? "") != _origHost
+            || (srv?.Shares?.FirstOrDefault()?.Name ?? "") != _origShare
+            || (srv?.Shares?.FirstOrDefault()?.CalibreMetadataPath ?? "") != _origCalibre
+            || (srv?.User ?? "") != _origUser
+            || (srv?.Domain ?? "") != _origDomain
+            || pass != _origPass;
         SettingsStore.Save(s);
+        UI.Theme.Apply(s.ThemePreference);
         StatusText.Text = "Saved.";
         DialogResult = true;
     }

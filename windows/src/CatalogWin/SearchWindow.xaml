@@ -32,7 +32,7 @@
                                 <Setter Property="BorderBrush" Value="#555555"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="Gray"/>
+                                <Setter Property="Foreground" Value="{DynamicResource AppMuted}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

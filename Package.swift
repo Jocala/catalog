@@ -17,6 +17,7 @@ let package = Package(
             name: "CatalogSwiftApp",
             dependencies: ["CatalogCore"],
             path: "Sources/CatalogSwiftApp",
+            resources: [.process("Resources")],
             linkerSettings: [.linkedLibrary("sqlite3"), .linkedLibrary("z")]
         )
     ]

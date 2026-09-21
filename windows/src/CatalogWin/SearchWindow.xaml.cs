@@ -15,6 +15,7 @@ public partial class SearchWindow : Window
     public SearchWindow()
     {
         InitializeComponent();
+        UI.Theme.ApplyCurrent();
         Loaded += async (_, _) => await FillDropdownsAsync();
     }
 

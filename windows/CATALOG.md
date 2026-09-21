@@ -46,13 +46,13 @@ cargo build --release -p catalog-ffi
 cd C:\source\catalog
 dotnet build CatalogWin.sln -c Release
 dotnet test tests\CatalogWin.Tests -c Release
-copy C:\source\reader\catalog\target\release\catalog_ffi.dll src\CatalogWin\bin\x64\Release\net8.0-windows\
+copy C:\source\reader\catalog\target\release\catalog_ffi.dll src\CatalogWin\bin\x64\Release\net9.0-windows\
 ```
 
 Single output tree: both projects pin `<Platforms>x64</Platforms>`
 (native `catalog_ffi.dll` is x64-only), so every command above lands in
 `bin\x64\Release\` — there is no `bin\Release` tree. Always launch from
-`bin\x64\Release\net8.0-windows\JocalaCatalog.exe`; delete a stray
+`bin\x64\Release\net9.0-windows\JocalaCatalog.exe`; delete a stray
 `bin\Release` if one predates this rule (build artifact, regenerable).
 
 Mac has no .NET SDK and no MSVC C toolchain — `catalog-ffi` host

@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net9.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -16,20 +16,26 @@
          every invocation — sln build, direct build, dotnet test. -->
     <Platforms>x64</Platforms>
     <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x64</Platform>
-    <Version>1.0.0</Version>
+    <Version>1.0</Version>
     <!-- GPU-less VMs (QXL, no passthrough): WPF falls back to software.
          Forced SoftwareOnly in App.xaml.cs; do not add D3D/QML dependencies. -->
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <PackageReference Include="SSH.NET" Version="2025.0.0" />
+    <Resource Include="Assets\donatel.png" />
+    <!-- Help page: loose file next to the exe so the browser can open it. -->
+    <Content Include="Assets\help.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <!-- NU1903: SSH.NET vuln advisories are unactionable here — client talks
        only to our own Kobo e-readers on the LAN. Revisit if upstream ships
        a clean version. -->
   <PropertyGroup>
-    <NoWarn>$(NoWarn);NU1903</NoWarn>
+    <NoWarn>$(NoWarn);NU1903;WPF0001</NoWarn>
   </PropertyGroup>
 
 </Project>
