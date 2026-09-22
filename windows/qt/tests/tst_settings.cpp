@@ -1,6 +1,7 @@
 // Settings JSON round-trips the exact WPF schema keys.
 // APPDATA is redirected to a temp dir: never touch real settings.
 #include "../settings.h"
+#include <QDir>
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QTest>
@@ -86,6 +87,19 @@ private slots:
         QVERIFY(!local.hasSource());
         local.localDir = "D:/books";
         QVERIFY(local.hasSource());
+    }
+
+    void settingsPathWithoutAppdata() {
+        // Linux: no APPDATA in env. Must fall back to a writable
+        // platform location, never root-anchored garbage (lost settings).
+        QByteArray saved = qgetenv("APPDATA");
+        qunsetenv("APPDATA");
+        QString p = AppSettings::settingsPath();
+        if (!saved.isNull())
+            qputenv("APPDATA", saved);
+        QVERIFY(!p.startsWith("/com.jocala.Catalog"));
+        QVERIFY(QDir(p).isAbsolute());
+        QVERIFY(p.endsWith("/settings.json"));
     }
 };
 

@@ -6,7 +6,15 @@
 #include <QStandardPaths>
 
 QString AppSettings::settingsPath() {
-    QString base = qEnvironmentVariable("APPDATA") + "/com.jocala.Catalog";
+    // Windows always sets APPDATA (shared %APPDATA%/com.jocala.Catalog
+    // file with the WPF app). Elsewhere (Linux) it is empty, which used
+    // to build the root-anchored garbage "/com.jocala.Catalog/..." —
+    // unwritable, so settings silently never persisted. Fall back to
+    // the platform app-data location instead.
+    QString appdata = qEnvironmentVariable("APPDATA");
+    QString base = appdata.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+        : appdata + "/com.jocala.Catalog";
     return base + "/settings.json";
 }
 
