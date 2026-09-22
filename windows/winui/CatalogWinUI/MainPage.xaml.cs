@@ -46,6 +46,7 @@ public sealed partial class MainPage : Page
     private readonly CoverCache _covers;
     private CancellationTokenSource? _loadCts;
     private string _config = "";
+    private int _preparedSeen;
     private bool _ready;
     private bool _probed;
     private bool _syncingBoxes;
@@ -74,7 +75,17 @@ public sealed partial class MainPage : Page
     private void Tiles_Prepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs e)
     {
         if (e.Element is not FrameworkElement fe || fe.DataContext is not TileItem tile)
+        {
+            Log.Info("CoverPrep", "prepared: element not a TileItem container");
             return;
+        }
+        int n = Interlocked.Increment(ref _preparedSeen);
+        if (n <= 5)
+        {
+            Log.Info("CoverPrep",
+                $"#{n} hasCover={tile.HasCover} pathEmpty={string.IsNullOrEmpty(tile.Path)} " +
+                $"hasImage={tile.Cover is not null} title={tile.Title}");
+        }
         if (tile.Cover is not null || !tile.HasCover || string.IsNullOrEmpty(tile.Path))
             return;
         lock (_inflightGate)
@@ -274,6 +285,12 @@ public sealed partial class MainPage : Page
             foreach (var t in tiles) _tiles.Add(t);
             SetStatus($"{tiles.Count} shown ({total} books)");
             Log.Info("Gallery", $"load done mode={mode} tiles={tiles.Count} total={total}");
+            if (tiles.Count > 0)
+            {
+                Log.Info("Gallery",
+                    $"first tile hasCover={tiles[0].HasCover} pathEmpty={string.IsNullOrEmpty(tiles[0].Path)} " +
+                    $"title={tiles[0].Title}");
+            }
             _ready = true;
             // Covers fill per visible tile via Tiles_Prepared — nothing
             // to kick here; the repeater realizes on layout.
