@@ -515,6 +515,13 @@ class CatalogStore: ObservableObject {
     var baseURL: URL { CatalogPaths.base }
     /// Set when the single SMB Calibre database cannot be read — drives the error dialog.
     @Published var dbError: String? = nil
+    /// Fresh start (no library configured) is not an error: the centered
+    /// No-books empty state points at Settings, so .notConfigured stays
+    /// silent. Only real failures surface as dbError (the alert).
+    func setDbError(_ error: Error) {
+        if case CatalogDBError.notConfigured = error { self.dbError = nil }
+        else { self.dbError = error.localizedDescription }
+    }
     @Published var showHandoffPrompt = false
     @Published var koboHandoffPendingBook: CatalogBook? = nil
     func load() {
@@ -570,7 +577,7 @@ class CatalogStore: ObservableObject {
                 ReaderLog.shared.e("CatalogStore", "load failed mode=\(mode.rawValue) \(error.localizedDescription)")
                 await MainActor.run {
                     self.books = []; self.totalCount = 0; self.isLoading = false
-                    self.dbError = error.localizedDescription
+                    self.setDbError(error)
                 }
             }
         }
@@ -587,7 +594,7 @@ class CatalogStore: ObservableObject {
                 await MainActor.run { self.drilledBooks = books; self.isDrilling = false }
             } catch {
                 ReaderLog.shared.e("CatalogStore", "drillAuthor failed \(error.localizedDescription)")
-                await MainActor.run { self.isDrilling = false; self.dbError = error.localizedDescription }
+                await MainActor.run { self.isDrilling = false; self.setDbError(error) }
             }
         }
     }
@@ -600,7 +607,7 @@ class CatalogStore: ObservableObject {
                 await MainActor.run { self.drilledBooks = books; self.isDrilling = false }
             } catch {
                 ReaderLog.shared.e("CatalogStore", "drillSeries failed \(error.localizedDescription)")
-                await MainActor.run { self.isDrilling = false; self.dbError = error.localizedDescription }
+                await MainActor.run { self.isDrilling = false; self.setDbError(error) }
             }
         }
     }
@@ -617,7 +624,7 @@ class CatalogStore: ObservableObject {
                 await MainActor.run { self.drilledBooks = mapped; self.isDrilling = false }
             } catch {
                 ReaderLog.shared.e("CatalogStore", "drillTag failed \(error.localizedDescription)")
-                await MainActor.run { self.isDrilling = false; self.dbError = error.localizedDescription }
+                await MainActor.run { self.isDrilling = false; self.setDbError(error) }
             }
         }
     }
@@ -625,14 +632,14 @@ class CatalogStore: ObservableObject {
     func fetchTotalCount(search q: String) async -> Int {
         do { return try await SmbCatalogDB.shared.fetchCount(search: q) }
         catch {
-            await MainActor.run { self.dbError = error.localizedDescription }
+            await MainActor.run { self.setDbError(error) }
             return 0
         }
     }
     func fetchBooks(search q: String) async -> [CatalogBook] {
         do { return try await SmbCatalogDB.shared.fetchBooks(search: q) }
         catch {
-            await MainActor.run { self.dbError = error.localizedDescription }
+            await MainActor.run { self.setDbError(error) }
             return []
         }
     }
@@ -1358,7 +1365,7 @@ struct ContentView: View {
                 let results = books.map { b in SearchResult(filePath: b.path, fileName: URL(fileURLWithPath: b.path).lastPathComponent, bookId: b.id, title: b.title, author: b.author, series: s.name, tags: [], authorSort: b.authorSort) }
                 await MainActor.run { searchResults = results; seriesResults = [] ; loadSearchThumbnails() }
             } catch {
-                await MainActor.run { store.dbError = error.localizedDescription }
+                await MainActor.run { store.setDbError(error) }
             }
         }
     }

@@ -120,6 +120,14 @@ public sealed class CatalogStore : INotifyPropertyChanged
         set { _dbError = value; OnPropertyChanged(); }
     }
 
+    // Fresh start (no library configured) is not an error: the centered
+    // No-books empty state points at Settings, so NotConfigured stays
+    // silent. Only real failures surface as DbError (MainWindow pops up).
+    // Public (not internal): no InternalsVisibleTo in this repo, and the
+    // test assembly asserts this mapping directly.
+    public static string? MapDbError(Exception ex)
+        => ex is CatalogDbException { Kind: CatalogDbKind.NotConfigured } ? null : ex.Message;
+
     private string? _koboError;
     public string? KoboError
     {
@@ -231,7 +239,7 @@ public sealed class CatalogStore : INotifyPropertyChanged
         {
             AppLog.Shared.Error("CatalogStore", $"load failed mode={BrowseMode} {ex.Message}");
             Items.Clear();
-            DbError = ex.Message;
+            DbError = MapDbError(ex);
         }
         finally
         {
@@ -258,7 +266,7 @@ public sealed class CatalogStore : INotifyPropertyChanged
         catch (Exception ex)
         {
             AppLog.Shared.Error("CatalogStore", $"drillAuthor failed {ex.Message}");
-            DbError = ex.Message;
+            DbError = MapDbError(ex);
         }
         finally { IsDrilling = false; }
     }
@@ -275,7 +283,7 @@ public sealed class CatalogStore : INotifyPropertyChanged
         catch (Exception ex)
         {
             AppLog.Shared.Error("CatalogStore", $"drillSeries failed {ex.Message}");
-            DbError = ex.Message;
+            DbError = MapDbError(ex);
         }
         finally { IsDrilling = false; }
     }
@@ -294,7 +302,7 @@ public sealed class CatalogStore : INotifyPropertyChanged
         catch (Exception ex)
         {
             AppLog.Shared.Error("CatalogStore", $"drillTag failed {ex.Message}");
-            DbError = ex.Message;
+            DbError = MapDbError(ex);
         }
         finally { IsDrilling = false; }
     }
