@@ -223,8 +223,12 @@ CatalogStore::LoadResult CatalogStore::doLoad(QString cfg, QString kind, QString
 
 void CatalogStore::onLoaded() {
     m_loading = false;
-    emit loadingChanged(false);
+    // Order matters: the page decision (loadingChanged -> rowCount check)
+    // must see the filled model. Emitting first locks a fresh launch onto
+    // the empty page even when books arrived — the grid then never shows
+    // until the next reload finds stale rows.
     applyLoad(m_watcher.result());
+    emit loadingChanged(false);
 }
 
 void CatalogStore::applyLoad(const LoadResult &r) {
