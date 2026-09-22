@@ -6,6 +6,7 @@ void BookModel::setBooks(const QList<BookItem> &books) {
     beginResetModel();
     m_rows.clear();
     m_covers.clear();
+    m_coversSmall.clear();
     for (const BookItem &b : books) {
         Row r;
         r.id = b.id;
@@ -22,6 +23,7 @@ void BookModel::setTiles(const QStringList &titles, const QStringList &subs,
     beginResetModel();
     m_rows.clear();
     m_covers.clear();
+    m_coversSmall.clear();
     for (int i = 0; i < titles.size(); ++i) {
         Row r;
         r.id = i < ids.size() ? ids[i] : -1;
@@ -43,12 +45,16 @@ void BookModel::setCoverBatch(const QList<QPair<QString, QImage>> &covers) {
     if (covers.isEmpty() || m_rows.isEmpty())
         return;
     for (const auto &c : covers) {
-        if (!c.first.isEmpty() && !c.second.isNull())
+        if (!c.first.isEmpty() && !c.second.isNull()) {
             m_covers.insert(c.first, QPixmap::fromImage(c.second));
+            m_coversSmall.insert(c.first,
+                QPixmap::fromImage(c.second.scaledToHeight(
+                    ListThumbHeight, Qt::SmoothTransformation)));
+        }
     }
     // One range update for the whole view (coalesces layout passes).
     QModelIndex top = index(0), bottom = index(m_rows.size() - 1);
-    emit dataChanged(top, bottom, {CoverRole});
+    emit dataChanged(top, bottom, {CoverRole, Qt::DecorationRole});
 }
 
 BookItem BookModel::bookAt(int row) const {
@@ -88,6 +94,16 @@ QVariant BookModel::data(const QModelIndex &index, int role) const {
     case CoverRole: {
         auto it = m_covers.find(r.coverPath);
         if (it != m_covers.end())
+            return *it;
+        if (!r.coverPath.isEmpty())
+            const_cast<BookModel *>(this)->coverNeeded(r.coverPath);
+        return QVariant();
+    }
+    case Qt::DecorationRole: {
+        // List mode: row-height thumbnail via the standard decoration
+        // path (same demand signal as the grid — one shared fetch).
+        auto it = m_coversSmall.find(r.coverPath);
+        if (it != m_coversSmall.end())
             return *it;
         if (!r.coverPath.isEmpty())
             const_cast<BookModel *>(this)->coverNeeded(r.coverPath);

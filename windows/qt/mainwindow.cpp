@@ -141,6 +141,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_list = new QListView(this);
     m_list->setModel(m_store.model());
     m_list->setUniformItemSizes(true);
+    m_list->setIconSize(QSize(36, 40));
     m_list->viewport()->setCursor(Qt::PointingHandCursor);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_list, &QListView::activated, this, &MainWindow::onTileActivated);
