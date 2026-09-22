@@ -90,6 +90,7 @@ Developer ID signing) ‖ win10 `cargo clean -p catalog-ffi && cargo build
 --release -p catalog-ffi`.
 
 Wave 3 — Mac notarize (`notary-jeff`), staple, `spctl` accept ‖ win10
+(full-path per-user SDK 10 — machine SDK 9 cannot target net10):
 `dotnet build CatalogWin.sln -c Release` (0/0) + `dotnet test` (all
 pass), copy `catalog_ffi.dll` next to the exe output, confirm no
 `JocalaCatalog.exe.WebView2/` cache and no stray `bin\Release` tree,

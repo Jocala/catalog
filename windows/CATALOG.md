@@ -31,7 +31,10 @@ The Rust tree stays at `C:\source\reader\catalog\` (cargo workspace root).
 
 Prereqs on the VM (verify once): Rust toolchain (`rustup`, MSVC host) +
 MSVC C toolchain (`cl.exe`, needed by `rusqlite/bundled` + `lzma-sys`
-via `zip`) + .NET SDK 9 (present: 9.0.317).
+via `zip`) + .NET SDK 10, per-user at `%LOCALAPPDATA%\Microsoft\dotnet`
+(installed 2026-09-22 via `dotnet-install.ps1 -Channel 10.0`, no admin;
+machine-wide SDK 9.0.317 can NOT target net10 — always invoke the 10 SDK
+by full path, e.g. `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe build`).
 
 ```powershell
 # 1. Mirror the Rust tree to the VM (from macOS):
@@ -44,15 +47,23 @@ cargo build --release -p catalog-ffi
 # 3. Mirror this tree + copy the DLL next to the exe output:
 #   (see Layout above for the selective tar; full-tree scp also works)
 cd C:\source\catalog
-dotnet build CatalogWin.sln -c Release
-dotnet test tests\CatalogWin.Tests -c Release
-copy C:\source\reader\catalog\target\release\catalog_ffi.dll src\CatalogWin\bin\x64\Release\net9.0-windows\
+%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe build CatalogWin.sln -c Release
+%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe test tests\CatalogWin.Tests -c Release
+copy C:\source\reader\catalog\target\release\catalog_ffi.dll src\CatalogWin\bin\x64\Release\net10.0-windows\
+```
+
+Self-contained publish (no .NET runtime needed on the target machine;
+win-x64 only — the FFI DLL is x64-native; no SingleFile, never trim WPF):
+```powershell
+%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe publish src\CatalogWin\CatalogWin.csproj -c Release -r win-x64 --self-contained true -o src\CatalogWin\bin\x64\Release\net10.0-windows\publish
+copy C:\source\reader\catalog\target\release\catalog_ffi.dll src\CatalogWin\bin\x64\Release\net10.0-windows\publish\
+# Launch to test: ...\net10.0-windows\publish\JocalaCatalog.exe
 ```
 
 Single output tree: both projects pin `<Platforms>x64</Platforms>`
 (native `catalog_ffi.dll` is x64-only), so every command above lands in
 `bin\x64\Release\` — there is no `bin\Release` tree. Always launch from
-`bin\x64\Release\net9.0-windows\JocalaCatalog.exe`; delete a stray
+`bin\x64\Release\net10.0-windows\JocalaCatalog.exe`; delete a stray
 `bin\Release` if one predates this rule (build artifact, regenerable).
 
 Mac has no .NET SDK and no MSVC C toolchain — `catalog-ffi` host
@@ -62,8 +73,8 @@ but the DLL + `dotnet` verification run on `win10` only.
 ## Verify before reporting
 
 ```powershell
-dotnet build CatalogWin.sln -c Release  # 0 errors
-dotnet test tests\CatalogWin.Tests -c Release  # all pass (KoboPath + Window gates)
+%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe build CatalogWin.sln -c Release  # 0 errors
+%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe test tests\CatalogWin.Tests -c Release  # all pass (KoboPath + Window gates)
 ```
 
 Parity gate: `books=6742` against the live library
