@@ -2,6 +2,7 @@
 #include "aboutdialog.h"
 #include "bookinfodialog.h"
 #include "helpdialog.h"
+#include "listdelegate.h"
 #include "searchdialog.h"
 #include "settingsdialog.h"
 #include "theme.h"
@@ -142,6 +143,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_list->setModel(m_store.model());
     m_list->setUniformItemSizes(true);
     m_list->setIconSize(QSize(36, 40));
+    m_list->setItemDelegate(new ListDelegate(this));
     m_list->viewport()->setCursor(Qt::PointingHandCursor);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_list, &QListView::activated, this, &MainWindow::onTileActivated);

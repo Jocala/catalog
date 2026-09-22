@@ -39,6 +39,7 @@ set(SOURCES
     helpdialog.cpp
     kobojob.cpp
     theme.cpp
+    listdelegate.cpp
 )
 if(WIN32)
     list(APPEND SOURCES catalogqt.rc)
@@ -60,6 +61,7 @@ set(HEADERS
     helpdialog.h
     kobojob.h
     theme.h
+    listdelegate.h
 )
 
 qt_add_executable(catalogqt

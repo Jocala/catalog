@@ -3,6 +3,7 @@
 // insert, and a miss on either emits the shared coverNeeded demand.
 // Images are generated in code — no fixtures.
 #include "../bookmodel.h"
+#include "../listdelegate.h"
 #include <QImage>
 #include <QPixmap>
 #include <QSignalSpy>
@@ -34,6 +35,12 @@ private slots:
         QPixmap small = m.data(m.index(0), Qt::DecorationRole).value<QPixmap>();
         QVERIFY(!small.isNull());
         QCOMPARE(small.height(), 40);
+    }
+    void listRowMetrics() {
+        ListDelegate d;
+        QStyleOptionViewItem opt;
+        opt.rect = QRect(0, 0, 300, 56);
+        QCOMPARE(d.sizeHint(opt, QModelIndex()).height(), ListDelegate::RowHeight);
     }
 };
 
