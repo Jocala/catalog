@@ -7,28 +7,28 @@ using System.Text.Json.Serialization;
 namespace CatalogWinUICore;
 
 public sealed record BookDto(
-    [JsonPropertyName("id")] long Id,
-    [JsonPropertyName("title")] string Title,
-    [JsonPropertyName("author")] string Author,
-    [JsonPropertyName("path")] string Path,
-    [JsonPropertyName("has_cover")] bool HasCover,
-    [JsonPropertyName("cover_hash")] string? CoverHash);
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("author")] string Author,
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("has_cover")] bool HasCover,
+    [property: JsonPropertyName("cover_hash")] string? CoverHash);
 
 public sealed record AuthorDto(
-    [JsonPropertyName("id")] long Id,
-    [JsonPropertyName("name")] string Name,
-    [JsonPropertyName("sort")] string Sort,
-    [JsonPropertyName("book_count")] int BookCount,
-    [JsonPropertyName("first_book_path")] string? FirstBookPath);
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("sort")] string Sort,
+    [property: JsonPropertyName("book_count")] int BookCount,
+    [property: JsonPropertyName("first_book_path")] string? FirstBookPath);
 
 public sealed record SeriesDto(
-    [JsonPropertyName("id")] long Id,
-    [JsonPropertyName("name")] string Name,
-    [JsonPropertyName("book_count")] int BookCount,
-    [JsonPropertyName("first_book_path")] string? FirstBookPath,
-    [JsonPropertyName("author")] string? Author = null);
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("book_count")] int BookCount,
+    [property: JsonPropertyName("first_book_path")] string? FirstBookPath,
+    [property: JsonPropertyName("author")] string? Author = null);
 
 public sealed record TagDto(
-    [JsonPropertyName("id")] long Id,
-    [JsonPropertyName("name")] string Name,
-    [JsonPropertyName("book_count")] int BookCount);
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("book_count")] int BookCount);
