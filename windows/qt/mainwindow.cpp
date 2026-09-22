@@ -46,7 +46,14 @@ void TileDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
         p->setPen(Qt::gray);
         p->drawText(coverRect, Qt::AlignCenter, "No cover");
     } else {
-        p->drawPixmap(coverRect, pm);
+        // Aspect-fit: source aspects vary (the engine fits within the
+        // fetch box), so a raw drawPixmap stretch distorts. Scale into
+        // the box, center, gutter the remainder.
+        QSize fitted = pm.size().scaled(coverRect.size(), Qt::KeepAspectRatio);
+        QPoint at(coverRect.center().x() - fitted.width() / 2,
+                  coverRect.center().y() - fitted.height() / 2);
+        p->fillRect(coverRect, QColor(0, 0, 0, 20));
+        p->drawPixmap(QRect(at, fitted), pm);
     }
     QRect titleRect(opt.rect.x(), opt.rect.y() + 246, 200, 34);
     p->setPen(opt.palette.text().color());
