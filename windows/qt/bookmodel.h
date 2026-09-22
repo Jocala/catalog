@@ -40,3 +40,4 @@ private:
     // the full pixmaps (same batch, negligible memory).
     QHash<QString, QPixmap> m_coversSmall;
     static const int ListThumbHeight = 40;
+};
