@@ -32,7 +32,9 @@ WizardStyle=modern
 ; (loose file the viewer opens). win-x64 only (FFI is x64-native).
 ; Excludes: WebView2 auto-creates <exe>.WebView2\EBWebView user-data cache
 ; on first run inside the output dir — never ship it (profile junk).
-Source: "..\src\CatalogWin\bin\x64\Release\net10.0-windows\publish\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion; Excludes: "*.WebView2"
+; Diagnostics ballast never needed at runtime: PDBs + DiaSymReader,
+; crash-dump and debugging natives, XML doc files.
+Source: "..\src\CatalogWin\bin\x64\Release\net10.0-windows\publish\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion; Excludes: "*.WebView2, *.pdb, createdump*, mscordaccore*, mscordbi.dll, *DiaSymReader*, *.xml"
 
 [Icons]
 Name: "{group}\Jocala Catalog"; Filename: "{app}\JocalaCatalog.exe"
