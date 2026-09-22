@@ -74,9 +74,19 @@ public sealed partial class MainPage : Page
     // thread in texture uploads (measured: frozen gallery, zero covers).
     private void Tiles_Prepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs e)
     {
-        if (e.Element is not FrameworkElement fe || fe.DataContext is not TileItem tile)
+        // Index-based lookup: the realized element's DataContext is not
+        // reliably the item here (measured: container without TileItem
+        // context), but the args index always addresses the source.
+        // Stale events across a reload are harmless: the fetch closure
+        // holds the tile object, and cancellation stops the fill.
+        TileItem? tile = null;
+        if (e.Element is FrameworkElement fe && fe.DataContext is TileItem dc)
+            tile = dc;
+        else if (e.Index >= 0 && e.Index < _tiles.Count)
+            tile = _tiles[e.Index];
+        if (tile is null)
         {
-            Log.Info("CoverPrep", "prepared: element not a TileItem container");
+            Log.Info("CoverPrep", $"prepared: no tile (type={e.Element.GetType().FullName} index={e.Index})");
             return;
         }
         int n = Interlocked.Increment(ref _preparedSeen);
