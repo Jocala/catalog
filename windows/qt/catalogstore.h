@@ -89,6 +89,14 @@ private:
     QSet<QString> m_inFlight;
     QHash<QString, QImage> m_coverCache;
     DiskCoverCache m_diskCache;
+    // Memory bound by BYTES, not count: a full library (~135 MB of small
+    // covers) sits far below the cap, so eviction practically never fires
+    // and a settled view can never lose a visible cover to a random
+    // victim (the frozen-gap bug). Oldest-inserted goes first when it
+    // does fire.
+    QList<QString> m_coverOrder;
+    qint64 m_coverBytes = 0;
+    static const qint64 COVER_MAX_BYTES = 256LL * 1024 * 1024;
     // Cover fetch gate (mirrors the C#/Swift 6-slot throttler): at most
     // COVER_MAX concurrent SMB fetches. Overflow used to queue without
     // limit — a fast cold scroll backloged hundreds of stale fetches and

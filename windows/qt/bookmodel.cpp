@@ -1,8 +1,4 @@
 #include "bookmodel.h"
-// TEMP includes for the capped demand log.
-#include <QDir>
-#include <QFile>
-#include <QTextStream>
 
 BookModel::BookModel(QObject *parent) : QAbstractListModel(parent) {}
 
@@ -93,18 +89,8 @@ QVariant BookModel::data(const QModelIndex &index, int role) const {
         auto it = m_covers.find(r.coverPath);
         if (it != m_covers.end())
             return *it;
-        if (!r.coverPath.isEmpty()) {
-            // TEMP: capped demand log (revert with the rest).
-            static int n = 0;
-            if (n++ < 30) {
-                QFile f(QDir::tempPath() + "/qt-cover.txt");
-                if (f.open(QIODevice::Append | QIODevice::Text)) {
-                    QTextStream s(&f);
-                    s << "demand " << r.coverPath << "\n";
-                }
-            }
+        if (!r.coverPath.isEmpty())
             const_cast<BookModel *>(this)->coverNeeded(r.coverPath);
-        }
         return QVariant();
     }
     }
