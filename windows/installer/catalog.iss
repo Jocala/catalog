@@ -27,11 +27,12 @@ UninstallDisplayName=Jocala Catalog
 WizardStyle=modern
 
 [Files]
-; Entire Release output tree: JocalaCatalog.exe + catalog_ffi.dll +
-; .NET deps + Assets\help.html (loose file the viewer opens).
+; Entire self-contained publish tree: JocalaCatalog.exe (apphost) +
+; JocalaCatalog.dll + catalog_ffi.dll + .NET deps + Assets\help.html
+; (loose file the viewer opens). win-x64 only (FFI is x64-native).
 ; Excludes: WebView2 auto-creates <exe>.WebView2\EBWebView user-data cache
 ; on first run inside the output dir — never ship it (profile junk).
-Source: "..\src\CatalogWin\bin\x64\Release\net9.0-windows\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion; Excludes: "*.WebView2"
+Source: "..\src\CatalogWin\bin\x64\Release\net10.0-windows\publish\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion; Excludes: "*.WebView2"
 
 [Icons]
 Name: "{group}\Jocala Catalog"; Filename: "{app}\JocalaCatalog.exe"
