@@ -54,6 +54,18 @@ via `zip`) + .NET SDK 10, per-user at `%LOCALAPPDATA%\Microsoft\dotnet`
 machine-wide SDK 9.0.317 can NOT target net10 — always invoke the 10 SDK
 by full path, e.g. `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe build`).
 
+MCP execution notes (measured 2026-09-22): `run-command` handles
+minutes-long builds inline (increased timeout) — no `sleep` polling
+needed; `cargo build --release` and `dotnet publish` both return
+directly. For fire-and-forget, `open-session type=background` with a
+fully path-qualified command (no `cd` — single-line only) +
+`read-session-output` to poll. Interactive sessions are NOT supported
+on Windows (POSIX-shell handshake). `dotnet build` without `-r` still
+lands in `bin\x64\Release\net10.0-windows\` (RID stays on the publish
+command line only); `dotnet publish -r` uses the `win-x64\` subdir as
+intermediate — both normal. `publish -o` never cleans: `rmdir /s /q`
+the publish dir before a release publish or stale files linger.
+
 ```powershell
 # 1. Mirror the Rust tree to the VM (from macOS):
 #   scp -r /Users/jeff/source/catalog win10:C:/source/reader/catalog
