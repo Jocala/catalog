@@ -82,10 +82,10 @@ if(WIN32)
         ws2_32 bcrypt ntdll userenv advapi32)
 else()
     # Linux: pthreads + dl + libm for the same staticlib, plus the
-    # system libs the engine's zip backend expects (bzip2).
+    # system libs the engine's zip backend expects (bzip2, xz).
     find_package(Threads REQUIRED)
     target_link_libraries(catalogqt PRIVATE
-        Threads::Threads ${CMAKE_DL_LIBS} m bz2)
+        Threads::Threads ${CMAKE_DL_LIBS} m bz2 lzma)
 endif()
 
 if(WIN32)
