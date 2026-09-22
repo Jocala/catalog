@@ -7,7 +7,7 @@ browse/search, settings, Kobo sync/open over WiFi.
 
 ## Layout
 
-- `windows/qt/` — the Qt shell (gallery, detail, settings, search,
+- `qt/` — the Qt shell (gallery, detail, settings, search,
   about/help, theme, status). Per-platform build scripts beside it:
   `build-catalogqt-windows.ps1`, `build-catalogqt-macos.sh`
   (Linux uses raw cmake for now). `packaging/catalogqt.iss.in` is
@@ -24,7 +24,7 @@ browse/search, settings, Kobo sync/open over WiFi.
 
 Precondition: sources committed (mirrors go from a fixed commit).
 
-- **win10** (static Qt 6.11.1): mirror `windows/qt` + `crates/` +
+- **win10** (static Qt 6.11.1): mirror `qt` + `crates/` +
   `Cargo.toml`/`Cargo.lock`; `cargo build --release -p catalog-ffi`
   with `RUSTFLAGS=-C target-feature=+crt-static`; run
   `build-catalogqt-windows.ps1` from `C:\source\catalog\qt`
@@ -32,7 +32,7 @@ Precondition: sources committed (mirrors go from a fixed commit).
 - **debian** (system Qt via `qt6-base-dev`): mirror same; plain
   `cargo build --release -p catalog-ffi`; cmake + build + `ctest`
   (`QT_QPA_PLATFORM=offscreen` — headless box).
-- **macOS** (static Qt 6.11.1): `windows/qt/build-catalogqt-macos.sh`
+- **macOS** (static Qt 6.11.1): `qt/build-catalogqt-macos.sh`
   (universal Rust lib + universal app + `ctest`).
 
 Verify: `cargo test --workspace`,

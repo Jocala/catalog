@@ -1,7 +1,7 @@
 # Jocala Catalog (`com.jocala.catalog`)
 
 Qt direction (2026-09-22): the product is the Qt Widgets app in
-`windows/qt/` over the Rust engine (`crates/catalog-core` +
+`qt/` over the Rust engine (`crates/catalog-core` +
 `crates/catalog-ffi`; `crates/catalog-cli` acceptance harness). One
 tree builds all three targets: win10 (static Qt 6.11.1), debian
 (system Qt 6.8.2), macOS (static Qt 6.11.1, universal app).
@@ -23,7 +23,7 @@ git history keeps everything too): SwiftUI app
 - Credentials come from Settings at runtime only; passwords are masked everywhere.
 
 ## Layout
-- `windows/qt/` — THE shell: gallery, detail, settings, search,
+- `qt/` — THE shell: gallery, detail, settings, search,
   about/help, theme, status; demand-coalesced covers (no queues),
   disk + byte-capped memory caches, silent fresh start, single Kobo
   is default, golden default star, no click outline, aspect-fit
@@ -53,7 +53,7 @@ git history keeps everything too): SwiftUI app
 ## Rust (the engine)
 - What's proven (do not regress): core 33 unit + 6 golden tests, FFI 6 smoke tests, `cargo clippy --workspace --all-targets -- -D warnings` clean. Live SMB vs debian: NTLMv2, 6755 books in ~5s, `author:austen` works. Windows native (2026-09-19): Rust 1.98.1 MSVC on win10; live parity user-driven.
 - Linux native (2026-09-22, debian): Rust 1.98.1, `libcatalog_ffi.a` 110MB, Qt 6.8.2 system libs, `JocalaCatalog` 46MB linked, `ctest` 3/3 (offscreen), app runs 20s offscreen clean, `catalog-cli library open /zstore/ebooks/calibre` → 6755 books (exact SMB parity) + cover fetch OK (160x240 JPEG). CMakeLists carries the Linux link set (Threads/DL/m + bz2 + lzma for the engine's zip backend).
-- macOS native (2026-09-22, this Mac arm64): Rust 1.98.1, universal `libcatalog_ffi.a` 158MB (lipo of both arches), static Qt 6.11.1 + APPLE CMake branch (bundle `com.jocala.catalogqt`, AppIcon.icns, Cocoa→CoreFoundation link set + bz2 + lzma), universal `JocalaCatalog.app` 85MB, `ctest` 4/4. Build script: `windows/qt/build-catalogqt-macos.sh`. Unsigned local run only so far — SMB proof + sign/notarize still open.
+- macOS native (2026-09-22, this Mac arm64): Rust 1.98.1, universal `libcatalog_ffi.a` 158MB (lipo of both arches), static Qt 6.11.1 + APPLE CMake branch (bundle `com.jocala.catalogqt`, AppIcon.icns, Cocoa→CoreFoundation link set + bz2 + lzma), universal `JocalaCatalog.app` 85MB, `ctest` 4/4. Build script: `qt/build-catalogqt-macos.sh`. Unsigned local run only so far — SMB proof + sign/notarize still open.
 - Rules: `catalog-core` takes **no GUI dependencies**, ever; `catalog-ffi` fns are all **blocking** (tokio runtime inside — shells call off UI thread); no `unwrap()` on new library paths.
 - Verify: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`.
 - Archived (do not revive without asking): egui/gtk/macos shells + SwiftUI/WPF/WinUI apps (tarballs above + git history). Sibling `~/source/reader/rust/` also frozen reference.
@@ -76,7 +76,7 @@ separate future step.
 Per-platform builds (independent — different machines, no shared
 state — run in any order, or parallel where noted):
 
-- **win10** (`192.168.1.170`, primary): mirror `windows/qt` + Rust
+- **win10** (`192.168.1.170`, primary): mirror `qt` + Rust
   `crates/` + `Cargo.toml`/`Cargo.lock` (qt-subset tar); `cargo
   build --release -p catalog-ffi` with `RUSTFLAGS=-C
   target-feature=+crt-static` (shop Qt is /MT); run
@@ -89,7 +89,7 @@ state — run in any order, or parallel where noted):
   --release -p catalog-ffi`; cmake against system Qt
   (`qt6-base-dev`) + build + `ctest` (offscreen — headless box).
   No packaging format chosen yet (tarball/AppImage/deb TBD).
-- **macOS** (this Mac): `windows/qt/build-catalogqt-macos.sh`
+- **macOS** (this Mac): `qt/build-catalogqt-macos.sh`
   (universal Rust lib via lipo + universal app + `ctest`); SMB
   proof vs debian; sign (`notary-jeff`) + notarize + DMG still open
   (bundle id `com.jocala.catalogqt`, distinct from the retired Swift
@@ -187,7 +187,7 @@ verify download URL(s) 200 with exact byte sizes.
   `dotnet build` 0/0, `dotnet test` 30/30. `.build/` removed — `build/`
   is the only build location (`--scratch-path build/check` for checks).
 - 2026-09-21/22 session (Qt port + Rust Kobo flows, committed `265c20f`;
-  verdict: borderline acceptable, quits for now): `windows/qt/` full
+  verdict: borderline acceptable, quits for now): `windows/qt/` (now `qt/`) full
   Widgets app (gallery, detail, settings, search, about/help, theme,
   status; static Qt 6.11.1 + static `catalog_ffi`, single
   `JocalaCatalog.exe` ~40 MB, installer 12.8 MB via `package-win`).

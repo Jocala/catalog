@@ -4,7 +4,7 @@ build
 
 # Build trees live outside the repo (win10/debian ~/build-catalogqt,
 # Mac source/builds/); belt-and-braces in case one ever lands here:
-windows/**/bin/
-windows/**/obj/
-windows/**/.vs/
-windows/**/TestResults/
+**/bin/
+**/obj/
+**/.vs/
+**/TestResults/

@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SRC="/Users/jeff/source/catalog"
-QTREE="$SRC/windows/qt"
+QTREE="$SRC/qt"
 BLD="/Users/jeff/source/builds/catalogqt"
 FFI="$BLD/libcatalog_ffi.a"
 CMAKE="/opt/homebrew/bin/cmake"
