@@ -23,10 +23,15 @@
          Never trim (PublishTrimmed stays false): WPF + WebView2 do not
          survive trimming. RID comes from the publish command line
          (-r win-x64), not from here, so the build output tree
-         (bin\x64\Release\net10.0-windows) is unchanged. -->
+         (bin\x64\Release\net10.0-windows) is unchanged.
+         Bundle compression stays OFF on purpose (measured 2026-09-22):
+         Deflate inside the bundle shrinks the installed exe but makes it
+         incompressible — Inno lzma2/max turned 76.6 MB into 71.1 MB.
+         Uncompressed bundle lets lzma2 work on raw IL, which is what
+         minimizes the download. -->
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <!-- GPU-less VMs (QXL, no passthrough): WPF falls back to software.
          Forced SoftwareOnly in App.xaml.cs; do not add D3D/QML dependencies. -->
   </PropertyGroup>
