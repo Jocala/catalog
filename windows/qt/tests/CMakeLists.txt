@@ -9,3 +9,4 @@ endfunction()
 
 catalogqt_test(tst_settings tst_settings.cpp ../settings.cpp ../models.cpp)
 catalogqt_test(tst_models tst_models.cpp tst_models.h ../settings.cpp ../models.cpp)
+catalogqt_test(tst_covercache tst_covercache.cpp ../covercache.cpp)

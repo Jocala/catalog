@@ -9,7 +9,8 @@
 #include <QTimer>
 #include <QtConcurrent>
 
-CatalogStore::CatalogStore(QObject *parent) : QObject(parent) {
+CatalogStore::CatalogStore(QObject *parent)
+    : QObject(parent), m_diskCache(DiskCoverCache::defaultRoot()) {
     m_settings = AppSettings::load();
     connect(&m_watcher, &QFutureWatcher<LoadResult>::finished, this, &CatalogStore::onLoaded);
     connect(&m_model, &BookModel::coverNeeded, this, &CatalogStore::onCoverNeeded);
@@ -23,6 +24,7 @@ void CatalogStore::reload(bool fresh) {
     exitSearch();
     m_drillKind.clear();
     m_freshNext = fresh;
+    ++m_coverGen;
     startLoad("root");
 }
 
@@ -34,6 +36,7 @@ void CatalogStore::setMode(Mode m) {
 
 void CatalogStore::setSort(Sort s) {
     m_sort = s;
+    ++m_coverGen;
     if (!m_drillKind.isEmpty() || m_searching)
         startLoad(m_searching ? "search" : "drill");
     else
@@ -45,6 +48,7 @@ void CatalogStore::drillAuthor(qint64 id, const QString &title) {
     m_drillId = id;
     m_drillTitle = title;
     exitSearch();
+    ++m_coverGen;
     startLoad("drill");
 }
 
@@ -53,6 +57,7 @@ void CatalogStore::drillSeries(qint64 id, const QString &title) {
     m_drillId = id;
     m_drillTitle = title;
     exitSearch();
+    ++m_coverGen;
     startLoad("drill");
 }
 
@@ -60,6 +65,7 @@ void CatalogStore::drillTag(const QString &tag) {
     m_drillKind = "tag";
     m_drillTag = tag;
     exitSearch();
+    ++m_coverGen;
     startLoad("drill");
 }
 
@@ -79,6 +85,7 @@ void CatalogStore::runSearch(const QJsonObject &params) {
     m_searchParams = params;
     m_searching = true;
     m_drillKind.clear();
+    ++m_coverGen;
     startLoad("search");
 }
 
@@ -299,38 +306,47 @@ QString CatalogStore::statusCounts() {
 }
 
 void CatalogStore::onCoverNeeded(const QString &path) {
-    if (path.isEmpty() || m_inFlight.contains(path) || m_coverCache.contains(path)
-        || m_coverQueue.contains(path))
+    if (path.isEmpty() || m_inFlight.contains(path) || m_coverCache.contains(path))
         return;
-    if (m_coverActive >= COVER_MAX) {
-        m_coverQueue.append(path);
-        return;
+    // Disk first: warm starts never touch SMB for covers (small local
+    // read, fine on the UI thread).
+    QByteArray jpg;
+    if (m_diskCache.tryGet(path, jpg)) {
+        QImage img;
+        if (img.loadFromData(jpg)) {
+            onCoverBatch(path, img);
+            return;
+        }
     }
-    fetchCover(path);
+    if (m_coverActive >= COVER_MAX)
+        return; // coalesce: the path re-demands on its next realize
+    fetchCover(path, m_coverGen);
 }
 
-void CatalogStore::fetchCover(const QString &path) {
+void CatalogStore::fetchCover(const QString &path, int gen) {
     m_inFlight.insert(path);
     ++m_coverActive;
     QString cfg = m_settings.libraryConfigJson();
-    QFuture<QPair<QString, QImage>> f = QtConcurrent::run([cfg, path]() -> QPair<QString, QImage> {
+    QFuture<QPair<QString, QImage>> f = QtConcurrent::run([this, cfg, path]() -> QPair<QString, QImage> {
         QByteArray cfgB = cfg.toUtf8();
         QByteArray pB = path.toUtf8();
         QByteArray bytes = ffiBytes(catalog_cover(cfgB.constData(), pB.constData(), 187, 240));
+        if (!bytes.isEmpty())
+            m_diskCache.put(path, bytes);
         QImage img;
         if (!bytes.isEmpty())
             img.loadFromData(bytes);
         return qMakePair(path, img);
     });
     QFutureWatcher<QPair<QString, QImage>> *w = new QFutureWatcher<QPair<QString, QImage>>(this);
-    connect(w, &QFutureWatcher<QPair<QString, QImage>>::finished, this, [this, w]() {
+    connect(w, &QFutureWatcher<QPair<QString, QImage>>::finished, this, [this, w, gen]() {
         auto r = w->result();
         w->deleteLater();
         m_inFlight.remove(r.first);
         --m_coverActive;
+        if (gen != m_coverGen)
+            return; // superseded load: keep the disk bytes, skip the paint
         onCoverBatch(r.first, r.second);
-        if (!m_coverQueue.isEmpty())
-            fetchCover(m_coverQueue.takeFirst());
     });
     w->setFuture(f);
 }

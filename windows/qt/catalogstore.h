@@ -2,6 +2,7 @@
 // CatalogStore: library data via blocking FFI, always off the UI thread.
 // Modes mirror the other ports: Books / Authors / Series / Tags + drill-in.
 #include "bookmodel.h"
+#include "covercache.h"
 #include "models.h"
 #include "settings.h"
 #include <QFutureWatcher>
@@ -65,7 +66,7 @@ private:
     static LoadResult doLoad(QString cfg, QString kind, QString arg1, Sort sort,
                              Mode mode, QJsonObject searchParams);
     void applyLoad(const LoadResult &r);
-    void fetchCover(const QString &path);
+    void fetchCover(const QString &path, int gen);
     QString statusCounts();
 
     AppSettings m_settings;
@@ -84,11 +85,16 @@ private:
     int m_searchBooks = 0;
     QSet<QString> m_inFlight;
     QHash<QString, QImage> m_coverCache;
+    DiskCoverCache m_diskCache;
     // Cover fetch gate (mirrors the C#/Swift 6-slot throttler): at most
-    // COVER_MAX concurrent SMB fetches; the rest queue. A single shared
-    // watcher drops all but the last result — hence one watcher per fetch.
-    QList<QString> m_coverQueue;
+    // COVER_MAX concurrent SMB fetches. Overflow used to queue without
+    // limit — a fast cold scroll backloged hundreds of stale fetches and
+    // repaints. Now there is no queue: a skipped path simply re-demands
+    // on its next realize (demand coalescing, same as the WinUI port).
+    // m_coverGen drops completions from superseded loads (browse/sort
+    // switches never clear in-flight workers, but their results die).
     int m_coverActive = 0;
+    int m_coverGen = 0;
     static const int COVER_MAX = 6;
     // Coalesced paint updates: fetched covers accumulate here and flush
     // to the model on a 120ms tick (one layout pass per batch).

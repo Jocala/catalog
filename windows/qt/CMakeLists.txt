@@ -29,6 +29,7 @@ set(SOURCES
     settings.cpp
     models.cpp
     catalogstore.cpp
+    covercache.cpp
     bookmodel.cpp
     mainwindow.cpp
     bookinfodialog.cpp
@@ -46,6 +47,7 @@ set(HEADERS
     settings.h
     models.h
     catalogstore.h
+    covercache.h
     bookmodel.h
     mainwindow.h
     bookinfodialog.h
