@@ -1,0 +1,39 @@
+; Jocala Catalog Qt — Inno Setup installer (single static exe + help
+; rides inside the binary via qrc). Same product as the WPF build:
+; same AppId so installing replaces it, same publisher.
+#ifndef VERSION
+  #define VERSION "1.0"
+#endif
+#define MyAppExeName "JocalaCatalog.exe"
+
+[Setup]
+AppId={{E51EB7AD-FEFB-4F3E-BD2C-CA6F49DD4410}
+AppName=Jocala Catalog
+AppVersion={#VERSION}
+AppPublisher=Jocala Software
+AppPublisherURL=https://www.jocala.com/catalog/
+DefaultDirName={autopf}\Jocala Catalog
+DefaultGroupName=Jocala Catalog
+OutputDir=..\install-qt
+OutputBaseFilename=jocala-catalog-qt.{#VERSION}
+Compression=lzma2/max
+SolidCompression=yes
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+PrivilegesRequired=lowest
+UninstallDisplayName=Jocala Catalog
+WizardStyle=modern
+
+[Files]
+Source: "@CMAKE_BINARY_DIR@\JocalaCatalog.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\Jocala Catalog"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\Uninstall Jocala Catalog"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Jocala Catalog"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
+
+[Run]
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Jocala Catalog"; Flags: nowait postinstall skipifsilent

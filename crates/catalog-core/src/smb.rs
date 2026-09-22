@@ -9,6 +9,8 @@
 //! hardcoded — they come from `jreader_settings::Settings` at runtime.
 
 use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::OnceLock;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +110,11 @@ pub struct SmbClient<B> {
 impl<B: SmbBackend> SmbClient<B> {
     pub fn new(backend: B) -> Self {
         Self { backend }
+    }
+
+    /// Release the backend (session pooling extracts connected backends).
+    pub fn into_backend(self) -> B {
+        self.backend
     }
 
     async fn login_params(
@@ -443,35 +450,222 @@ pub async fn download_db_bytes(
 }
 
 /// Generic remote-file download with retry (covers, epubs, …).
+/// Sessions are pooled: repeat reads reuse the authenticated share
+/// session instead of paying TCP + NTLM per file (the gallery-cover lag
+/// vs OS-pooled transports). Same retry/auth semantics as `download_data`.
 pub async fn download_file_bytes(
     conn: SmbConn,
     share: &str,
     remote_path: &str,
 ) -> Result<Vec<u8>, SmbError> {
-    let mut client = SmbClient::new(SmbCrateBackend::new(conn.clone()));
-    client
-        .download_data(&conn.user, &conn.password, &conn.domain, share, remote_path)
-        .await
+    pooled_download(&conn, share, remote_path).await
 }
 
-/// List a share directory with retry.
+/// List a share directory with retry (pooled session, same as reads).
 pub async fn list_dir(
     conn: SmbConn,
     share: &str,
     path: &str,
 ) -> Result<Vec<SmbEntry>, SmbError> {
-    let mut client = SmbClient::new(SmbCrateBackend::new(conn.clone()));
-    client
-        .list_directory(&conn.user, &conn.password, &conn.domain, share, path)
-        .await
+    pooled_list(&conn, share, path).await
 }
 
 /// Login + share connect with retry (powers Test SMB for real).
+/// Deliberately unpooled: a connectivity test must not reuse a session.
 pub async fn test_share(conn: SmbConn, share: &str) -> Result<(), SmbError> {
     let mut client = SmbClient::new(SmbCrateBackend::new(conn.clone()));
     client
         .test_connection(&conn.user, &conn.password, &conn.domain, share)
         .await
+}
+
+// ---------------------------------------------------------------------------
+// Session pool. Authenticated share sessions are reused across calls so
+// repeat reads (gallery covers, epubs, db refreshes) skip TCP + NTLM
+// setup. Keyed by creds+share (passwords in memory only, same precedent
+// as the FFI db cache). Idle entries evict after POOL_IDLE_SECS; at most
+// POOL_MAX_IDLE idle sessions per key. A failed session is dropped, never
+// retried in place — the retry always reconnects fresh (withFreshClient).
+// ---------------------------------------------------------------------------
+
+const POOL_IDLE_SECS: u64 = 90;
+const POOL_MAX_IDLE: usize = 8;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PoolKey {
+    host: String,
+    share: String,
+    user: String,
+    domain: String,
+    password: String,
+}
+
+impl PoolKey {
+    fn of(conn: &SmbConn, share: &str) -> Self {
+        Self {
+            host: conn.host.clone(),
+            share: share.to_string(),
+            user: conn.user.clone(),
+            domain: conn.domain.clone(),
+            password: conn.password.clone(),
+        }
+    }
+}
+
+struct PooledSession {
+    backend: SmbCrateBackend,
+    last_used: std::time::Instant,
+}
+
+static POOL: OnceLock<tokio::sync::Mutex<HashMap<PoolKey, Vec<PooledSession>>>> =
+    OnceLock::new();
+
+fn pool() -> &'static tokio::sync::Mutex<HashMap<PoolKey, Vec<PooledSession>>> {
+    POOL.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+/// Pure eviction rule (unit-tested): keep fresh entries up to the cap.
+fn keep_entry(last_used: std::time::Instant, now: std::time::Instant, kept: usize) -> bool {
+    now.duration_since(last_used).as_secs() < POOL_IDLE_SECS && kept < POOL_MAX_IDLE
+}
+
+async fn checkout(key: &PoolKey, conn: &SmbConn, share: &str) -> Result<SmbCrateBackend, SmbError> {
+    let now = std::time::Instant::now();
+    let mut evicted: Vec<PooledSession> = Vec::new();
+    let hit = {
+        let mut guard = pool().lock().await;
+        let mut hit: Option<PooledSession> = None;
+        if let Some(entries) = guard.get_mut(key) {
+            let mut kept: Vec<PooledSession> = Vec::new();
+            // Newest first: the hottest TCP session wins.
+            for e in entries.drain(..).rev() {
+                if hit.is_none() && keep_entry(e.last_used, now, kept.len()) {
+                    hit = Some(e);
+                } else if keep_entry(e.last_used, now, kept.len()) {
+                    kept.push(e);
+                } else {
+                    evicted.push(e);
+                }
+            }
+            *entries = kept;
+        }
+        hit
+    };
+    // Graceful logoff outside the lock; failures mean the session was
+    // already dead, which is exactly why it was evicted.
+    for mut e in evicted {
+        let _ = e.backend.logoff().await;
+    }
+    if let Some(e) = hit {
+        return Ok(e.backend);
+    }
+    // Miss: fresh login + share connect (SmbClient retry rules intact).
+    let mut client = SmbClient::new(SmbCrateBackend::new(conn.clone()));
+    client
+        .login_params(&conn.user, &conn.password, &conn.domain)
+        .await?;
+    client.connect_share_retry("pooled", share).await?;
+    Ok(client.into_backend())
+}
+
+async fn checkin(key: PoolKey, backend: SmbCrateBackend) {
+    let mut guard = pool().lock().await;
+    let entries = guard.entry(key).or_default();
+    if entries.len() < POOL_MAX_IDLE {
+        entries.push(PooledSession { backend, last_used: std::time::Instant::now() });
+    }
+    // Over cap: drop (TCP closes); the pool stays bounded.
+}
+
+async fn pooled_download(
+    conn: &SmbConn,
+    share: &str,
+    remote_path: &str,
+) -> Result<Vec<u8>, SmbError> {
+    let key = PoolKey::of(conn, share);
+    // First attempt: pooled or fresh session, sharing-violation loop intact.
+    let mut backend = checkout(&key, conn, share).await?;
+    let mut last = String::new();
+    for _ in 1..=3 {
+        match backend.read_file_shared(remote_path).await {
+            Ok(d) if !d.is_empty() => {
+                checkin(key, backend).await;
+                return Ok(d);
+            }
+            Ok(_) => {
+                last = "empty file".to_string();
+                break;
+            }
+            Err(m) if m.to_ascii_lowercase().contains("sharing") => {
+                last = m;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            Err(m) => {
+                last = m;
+                break;
+            }
+        }
+    }
+    // Transient (non-auth) failure: retry once on a FRESH session, then
+    // give up. Auth failures never retry (no poison, nothing cached).
+    // Empty file is a content answer, not a transport failure.
+    if last == "empty file" {
+        return Err(SmbError::NotFound(last));
+    }
+    if SmbClient::<SmbCrateBackend>::should_retry("download", &last) {
+        let mut fresh = checkout_fresh(conn, share).await?;
+        match fresh.read_file_shared(remote_path).await {
+            Ok(d) if !d.is_empty() => {
+                checkin(key, fresh).await;
+                return Ok(d);
+            }
+            Ok(_) => last = "empty file".to_string(),
+            Err(m) => last = m,
+        }
+    }
+    Err(classify_error(&last))
+}
+
+/// Connect bypassing the pool (fresh-session retry path).
+async fn checkout_fresh(conn: &SmbConn, share: &str) -> Result<SmbCrateBackend, SmbError> {
+    let mut client = SmbClient::new(SmbCrateBackend::new(conn.clone()));
+    client
+        .login_params(&conn.user, &conn.password, &conn.domain)
+        .await?;
+    client.connect_share_retry("pooled-retry", share).await?;
+    Ok(client.into_backend())
+}
+
+async fn pooled_list(
+    conn: &SmbConn,
+    share: &str,
+    path: &str,
+) -> Result<Vec<SmbEntry>, SmbError> {
+    let key = PoolKey::of(conn, share);
+    let mut backend = checkout(&key, conn, share).await?;
+    match backend.list_directory(path).await {
+        Ok(files) => {
+            checkin(key, backend).await;
+            Ok(files.into_iter().filter(|e| e.name != "." && e.name != "..").collect())
+        }
+        Err(m) => {
+            if SmbClient::<SmbCrateBackend>::should_retry("list", &m) {
+                if let Ok(mut fresh) = checkout_fresh(conn, share).await {
+                    match fresh.list_directory(path).await {
+                        Ok(files) => {
+                            checkin(key, fresh).await;
+                            return Ok(files
+                                .into_iter()
+                                .filter(|e| e.name != "." && e.name != "..")
+                                .collect());
+                        }
+                        Err(m2) => return Err(classify_error(&m2)),
+                    }
+                }
+            }
+            Err(classify_error(&m))
+        }
+    }
 }
 
 /// Parse `//host/share/rest`, `\\host\share\rest`, or
@@ -553,5 +747,33 @@ mod tests {
             assert!(is_retryable_errno(code));
         }
         assert!(!is_retryable_errno(2));
+    }
+
+    #[test]
+    fn pool_eviction_rule() {
+        let now = std::time::Instant::now();
+        let fresh = now - std::time::Duration::from_secs(10);
+        let stale = now - std::time::Duration::from_secs(900);
+        assert!(keep_entry(fresh, now, 0));
+        assert!(keep_entry(fresh, now, POOL_MAX_IDLE - 1));
+        assert!(!keep_entry(fresh, now, POOL_MAX_IDLE));
+        assert!(!keep_entry(stale, now, 0));
+    }
+
+    #[test]
+    fn pool_key_splits_creds() {
+        let a = PoolKey::of(
+            &SmbConn { host: "h".into(), user: "u".into(), password: "p1".into(), domain: "".into() },
+            "s",
+        );
+        let b = PoolKey::of(
+            &SmbConn { host: "h".into(), user: "u".into(), password: "p2".into(), domain: "".into() },
+            "s",
+        );
+        assert_ne!(a, b);
+        assert_eq!(a, PoolKey::of(
+            &SmbConn { host: "h".into(), user: "u".into(), password: "p1".into(), domain: "".into() },
+            "s",
+        ));
     }
 }

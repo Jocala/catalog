@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "catalog_ffi"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "rlib", "staticlib"]
 
 [dependencies]
 catalog-core = { path = "../catalog-core" }

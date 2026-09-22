@@ -8,6 +8,9 @@
 //! returns empty).
 
 pub mod handoff;
+pub mod open;
+pub mod ssh;
+pub mod sync;
 
 pub const MAX_PATH_LEN: usize = 185;
 pub const PREFIX: &str = "/mnt/onboard";

@@ -127,8 +127,12 @@
         </StackPanel>
 
         <!-- Books grid (windowed: UniformGrid renders ~14 rows between
-             spacers that preserve the full scroll extent) -->
+             spacers that preserve the full scroll extent).
+             Explicit always-visible vertical bar: the Fluent overlay
+             style otherwise leaves the gallery with no visible scrollbar. -->
         <ScrollViewer x:Name="GridScroll" Visibility="Collapsed"
+                      VerticalScrollBarVisibility="Visible"
+                      HorizontalScrollBarVisibility="Disabled"
                       ScrollChanged="Grid_ScrollChanged" SizeChanged="Grid_SizeChanged">
             <StackPanel>
                 <Border x:Name="GridTopPad" Height="0"/>
@@ -197,7 +201,8 @@
                     <TextBlock x:Name="DrillCount" VerticalAlignment="Center" Foreground="{DynamicResource AppMuted}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Border>
-            <ScrollViewer x:Name="DrillScroll" ScrollChanged="Drill_ScrollChanged" SizeChanged="Drill_SizeChanged">
+            <ScrollViewer x:Name="DrillScroll" ScrollChanged="Drill_ScrollChanged" SizeChanged="Drill_SizeChanged"
+                          VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <Border x:Name="DrillTopPad" Height="0"/>
                     <ItemsControl x:Name="DrillItems" ItemTemplate="{StaticResource TileTemplate}">
@@ -214,6 +219,7 @@
 
         <!-- Search results (windowed like the main grid) -->
         <ScrollViewer x:Name="SearchView" Visibility="Collapsed"
+                      VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled"
                       ScrollChanged="Search_ScrollChanged" SizeChanged="Search_SizeChanged">
             <StackPanel>
                 <Border x:Name="SearchTopPad" Height="0"/>

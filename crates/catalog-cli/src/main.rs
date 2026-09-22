@@ -7,6 +7,7 @@
 //!   catalog-cli import-zip <file> --to <dir>
 //!   catalog-cli smb ls <unc> [--user U ...]
 //!   catalog-cli smb get <unc> --out <file> [--user U ...]
+//!   catalog-cli cover <library> <bookdir> [--out <file>]
 //!   catalog-cli settings get <key> | set <key> <value> | path
 //!
 //! <path> is a local dir or smb://host/share[/dir].
@@ -53,9 +54,24 @@ enum Cmd {
         #[command(subcommand)]
         op: SmbOp,
     },
+    /// Fetch a book's cover (187x240 scaled JPEG) or print `none`.
+    Cover {
+        /// Library path (local dir or smb://host/share[/dir]).
+        library: String,
+        /// Book dir as listed by `library list` (book.path).
+        bookdir: String,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[command(flatten)]
+        creds: Creds,
+    },
     Settings {
         #[command(subcommand)]
         op: SettingsOp,
+    },
+    Kobo {
+        #[command(subcommand)]
+        op: KoboOp,
     },
 }
 
@@ -109,6 +125,33 @@ enum SettingsOp {
     Set { key: String, value: String },
     /// Print the settings file location.
     Path,
+}
+
+#[derive(Subcommand)]
+enum KoboOp {
+    /// SSH shell-exec spike (russh). Password comes from KOBO_PASSWORD
+    /// env (never argv, never printed); empty means the default key file.
+    /// Prints the remote output, then `exit=<code>`.
+    Ssh {
+        ip: String,
+        cmd: String,
+        #[arg(long, default_value_t = 10)]
+        timeout: u64,
+    },
+    /// Full open flow (probe → predict → find → match → open).
+    Open {
+        ip: String,
+        title: String,
+        author: String,
+    },
+    /// Full sync & open flow for a library book.
+    Sync {
+        path: String,
+        id: i64,
+        ip: String,
+        #[command(flatten)]
+        creds: Creds,
+    },
 }
 
 fn source_from(
@@ -311,6 +354,35 @@ async fn cmd_smb_get(
     Ok(())
 }
 
+async fn cmd_cover(
+    library: &str,
+    bookdir: &str,
+    out: Option<&Path>,
+    creds: &Creds,
+    settings: &Settings,
+) -> Result<(), String> {
+    let src = source_from(library, creds, settings)?;
+    let path = src.book_path(bookdir);
+    let data = catalog_core::covers::fetch_cover_cached(&src, &path)
+        .await
+        .filter(|d| !d.is_empty())
+        .ok_or_else(|| format!("no cover for {bookdir}"))?;
+    let scaled = catalog_core::covers::scale_cover(&data, 187, 240)
+        .ok_or_else(|| format!("undecodable cover for {bookdir}"))?;
+    if let Some(dest) = out {
+        if let Some(parent) = dest.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+        }
+        std::fs::write(dest, &scaled).map_err(|e| e.to_string())?;
+        println!("{} bytes -> {}", scaled.len(), dest.display());
+    } else {
+        println!("{} bytes", scaled.len());
+    }
+    Ok(())
+}
+
 fn cmd_settings_get(key: &str, settings: &Settings) -> Result<(), String> {
     match key {
         "library_source" => println!("{}", settings.library_source),
@@ -460,6 +532,9 @@ async fn run() -> Result<(), String> {
             SmbOp::Ls { unc, creds } => cmd_smb_ls(&unc, &creds, &settings).await,
             SmbOp::Get { unc, out, creds } => cmd_smb_get(&unc, &out, &creds, &settings).await,
         },
+        Cmd::Cover { library, bookdir, out, creds } => {
+            cmd_cover(&library, &bookdir, out.as_deref(), &creds, &settings).await
+        }
         Cmd::Settings { op } => match op {
             SettingsOp::Get { key } => cmd_settings_get(&key, &settings),
             SettingsOp::Set { key, value } => cmd_settings_set(&key, &value, &mut settings),
@@ -468,5 +543,69 @@ async fn run() -> Result<(), String> {
                 Ok(())
             }
         },
+        Cmd::Kobo { op } => match op {
+            KoboOp::Ssh { ip, cmd, timeout } => cmd_kobo_ssh(&ip, &cmd, timeout).await,
+            KoboOp::Open { ip, title, author } => cmd_kobo_open(&ip, &title, &author).await,
+            KoboOp::Sync { path, id, ip, creds } => {
+                cmd_kobo_sync(&path, id, &ip, &creds, &settings).await
+            }
+        },
     }
+}
+
+fn kobo_auth() -> catalog_core::kobo::ssh::SshAuth {
+    use catalog_core::kobo::ssh::{default_key_file, SshAuth};
+    let pw = std::env::var("KOBO_PASSWORD").unwrap_or_default();
+    if pw.is_empty() {
+        SshAuth::KeyFile(default_key_file())
+    } else {
+        SshAuth::Password(pw)
+    }
+}
+
+fn print_outcome(v: serde_json::Value) -> Result<(), String> {
+    println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+    if v.get("status").and_then(|s| s.as_str()) == Some("opened") {
+        Ok(())
+    } else {
+        Err(format!(
+            "kobo outcome: {}",
+            v.get("status").and_then(|s| s.as_str()).unwrap_or("?")
+        ))
+    }
+}
+
+async fn cmd_kobo_open(ip: &str, title: &str, author: &str) -> Result<(), String> {
+    let out =
+        catalog_core::kobo::open::open_on_kobo(ip, title, author, kobo_auth(), None).await;
+    print_outcome(out.to_json())
+}
+
+async fn cmd_kobo_sync(
+    path: &str,
+    id: i64,
+    ip: &str,
+    creds: &Creds,
+    settings: &Settings,
+) -> Result<(), String> {
+    let src = source_from(path, creds, settings)?;
+    let out = catalog_core::kobo::sync::sync_and_open(&src, id, ip, kobo_auth()).await;
+    print_outcome(out.to_json())
+}
+
+async fn cmd_kobo_ssh(ip: &str, cmd: &str, timeout: u64) -> Result<(), String> {
+    use catalog_core::kobo::ssh::{default_key_file, ssh_sync_russh, SshAuth};
+    let pw = std::env::var("KOBO_PASSWORD").unwrap_or_default();
+    let auth = if pw.is_empty() {
+        SshAuth::KeyFile(default_key_file())
+    } else {
+        SshAuth::Password(pw)
+    };
+    let r = ssh_sync_russh(ip, cmd, timeout, auth).await;
+    println!("{}", r.output);
+    println!("exit={}", r.code);
+    if r.code != 0 {
+        return Err(format!("kobo ssh exit {}", r.code));
+    }
+    Ok(())
 }

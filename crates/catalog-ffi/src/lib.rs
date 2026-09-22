@@ -17,7 +17,7 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use catalog_core::db::{self, FileSource, SearchParams};
 use catalog_core::{covers, kobo};
@@ -96,10 +96,43 @@ fn file_source(cfg: &serde_json::Value) -> Result<FileSource, String> {
 fn open_db(
     cfg: &serde_json::Value,
 ) -> Result<(rusqlite::Connection, FileSource), String> {
+    // Process-wide metadata.db byte cache (mirrors WPF SmbCatalogDB:
+    // single in-memory DB, Reload bypasses). Keyed by the full config
+    // JSON (passwords ride along but never leave memory); 60s TTL.
+    // Stale-read window matches the other ports: Calibre-side changes
+    // appear after the TTL or an explicit Reload.
+    type DbCache = Mutex<std::collections::HashMap<String, (Vec<u8>, std::time::Instant)>>;
+    static CACHE: OnceLock<DbCache> = OnceLock::new();
+    static TTL: std::time::Duration = std::time::Duration::from_secs(60);
     let src = file_source(cfg)?;
-    let bytes = runtime()
-        .block_on(src.read_db_bytes())
-        .map_err(|e| e.to_string())?;
+    let key = serde_json::to_string(cfg).unwrap_or_default();
+    let fresh = cfg_get(cfg, "fresh") == "1";
+    let bytes = if !fresh {
+        CACHE
+            .get_or_init(|| DbCache::new(std::collections::HashMap::new()))
+            .lock()
+            .map_err(|e| format!("db cache poisoned: {e}"))?
+            .get(&key)
+            .filter(|(_, t)| t.elapsed() < TTL)
+            .map(|(b, _)| b.clone())
+    } else {
+        None
+    };
+    let bytes = match bytes {
+        Some(b) => b,
+        None => {
+            let b = runtime()
+                .block_on(src.read_db_bytes())
+                .map_err(|e| e.to_string())?;
+            if let Ok(mut cache) = CACHE
+                .get_or_init(|| DbCache::new(std::collections::HashMap::new()))
+                .lock()
+            {
+                cache.insert(key, (b.clone(), std::time::Instant::now()));
+            }
+            b
+        }
+    };
     let conn = db::open_memory_db(&bytes).map_err(|e| e.to_string())?;
     Ok((conn, src))
 }
@@ -378,6 +411,127 @@ pub extern "C" fn catalog_kobo_match(
             serde_json::from_str(&craw).map_err(|e| format!("bad candidates json: {e}"))?;
         let (strict, title_only) = kobo::strict_match(&cands, &title, &author);
         Ok(serde_json::json!({"strict": strict, "title_only": title_only}))
+    })
+}
+
+/// russh shell-exec spike: config `{"ip","cmd","timeout_secs",
+/// "password","key_file"}`. Empty password falls back to the key file
+/// (default `~/.ssh/id_ed25519`). Returns
+/// `{"ok":{"output":...,"code":...}}` — 0 ok, 255 auth rejection,
+/// 124 overrun, -1 transport failure. Mirrors SSH.NET `SshSync`.
+#[no_mangle]
+pub extern "C" fn catalog_kobo_ssh(config_json: *const c_char) -> *mut c_char {
+    run(|| {
+        let raw = c_str(config_json)?;
+        let v: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
+        let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let ip = s("ip");
+        if ip.trim().is_empty() {
+            return Err("missing ip".to_string());
+        }
+        let cmd = s("cmd");
+        let timeout: u64 = v.get("timeout_secs").and_then(|x| x.as_u64()).unwrap_or(10);
+        let pw = s("password");
+        let kf = s("key_file");
+        let auth = if !pw.is_empty() {
+            kobo::ssh::SshAuth::Password(pw)
+        } else if !kf.is_empty() {
+            kobo::ssh::SshAuth::KeyFile(kf.into())
+        } else {
+            kobo::ssh::SshAuth::KeyFile(kobo::ssh::default_key_file())
+        };
+        let r = runtime().block_on(kobo::ssh::ssh_sync_russh(&ip, &cmd, timeout, auth));
+        Ok(serde_json::json!({"output": r.output, "code": r.code}))
+    })
+}
+
+/// Kobo open orchestration (probe → predict → find → match → open).
+/// Config: `{"ip","password","key_file","title","author","book_id",
+/// "timeout_secs"}` plus the library `file_source` shape when Sync & Open
+/// size consent matters (`book_id` fetches the EPUB size for `Missing`).
+/// Empty password falls back to the key file. Returns the outcome object:
+/// `{"status":"opened"|"missing"|"ambiguous"|"failed", ...}` — shells map
+/// statuses to dialogs exactly like the Swift/C# ports.
+#[no_mangle]
+pub extern "C" fn catalog_kobo_open(config_json: *const c_char) -> *mut c_char {
+    run(|| {
+        let raw = c_str(config_json)?;
+        let v: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
+        let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let ip = s("ip");
+        if ip.trim().is_empty() {
+            return Err("missing ip".to_string());
+        }
+        let pw = s("password");
+        let kf = s("key_file");
+        let auth = if !pw.is_empty() {
+            kobo::ssh::SshAuth::Password(pw)
+        } else if !kf.is_empty() {
+            kobo::ssh::SshAuth::KeyFile(kf.into())
+        } else {
+            kobo::ssh::SshAuth::KeyFile(kobo::ssh::default_key_file())
+        };
+        // Library is optional: only needed for Missing.size_bytes consent.
+        let library: Option<(FileSource, i64)> = file_source(&v)
+            .ok()
+            .zip(v.get("book_id").and_then(|x| x.as_i64()));
+        // `library` borrows `v` via src? No — FileSource owns; unwrap the pair.
+        let out = match library {
+            Some((src, id)) => {
+                runtime().block_on(kobo::open::open_on_kobo(
+                    &ip,
+                    &s("title"),
+                    &s("author"),
+                    auth,
+                    Some((&src, id)),
+                ))
+            }
+            None => runtime().block_on(kobo::open::open_on_kobo(
+                &ip,
+                &s("title"),
+                &s("author"),
+                auth,
+                None,
+            )),
+        };
+        Ok(out.to_json())
+    })
+}
+
+/// Kobo Sync & Open: fetch the book's EPUB from the library (same
+/// `file_source` config shape as the other calls), push it over the
+/// shell channel, then open. Returns the outcome object (see above).
+/// Size consent (`Missing.size_bytes`) happens in UI before calling.
+#[no_mangle]
+pub extern "C" fn catalog_kobo_sync(config_json: *const c_char) -> *mut c_char {
+    run(|| {
+        let raw = c_str(config_json)?;
+        let v: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
+        let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let src = file_source(&v)?;
+        let ip = s("ip");
+        if ip.trim().is_empty() {
+            return Err("missing ip".to_string());
+        }
+        let book_id: i64 = v
+            .get("book_id")
+            .and_then(|x| x.as_i64())
+            .ok_or_else(|| "missing book_id".to_string())?;
+        let pw = s("password");
+        let kf = s("key_file");
+        let auth = if !pw.is_empty() {
+            kobo::ssh::SshAuth::Password(pw)
+        } else if !kf.is_empty() {
+            kobo::ssh::SshAuth::KeyFile(kf.into())
+        } else {
+            kobo::ssh::SshAuth::KeyFile(kobo::ssh::default_key_file())
+        };
+        let out =
+            runtime().block_on(kobo::sync::sync_and_open(&src, book_id, &ip, auth));
+        Ok(out.to_json())
     })
 }
 

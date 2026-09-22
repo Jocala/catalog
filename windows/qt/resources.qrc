@@ -1,0 +1,9 @@
+<RCC>
+  <!-- Canonical copies: Sources/CatalogSwiftApp/Resources/ (Mac).
+       Mirrored here so the Qt tree builds standalone on win10. -->
+  <qresource prefix="/catalog">
+    <file alias="help.html">assets/help.html</file>
+    <file alias="donatel.png">assets/donatel.png</file>
+    <file alias="appicon.ico">../src/CatalogWin/AppIcon.ico</file>
+  </qresource>
+</RCC>

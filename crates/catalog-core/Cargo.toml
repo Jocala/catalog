@@ -17,5 +17,6 @@ directories = { workspace = true }
 smb = { workspace = true }
 async-trait = { workspace = true }
 futures-util = "0.3"
+russh = { workspace = true }
 
 [dev-dependencies]
