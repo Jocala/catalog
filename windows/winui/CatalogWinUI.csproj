@@ -34,6 +34,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\CatalogWinUICore\CatalogWinUICore.csproj" />
+    <!-- Native engine (Rust catalog-ffi). Recipe-owned file, gitignored:
+         the win10 recipe copies catalog_ffi.dll here BEFORE build so it
+         lands next to the exe (unpackaged multi-file: loose is correct).
+         Absent on a fresh checkout — startup logs the miss, no crash. -->
+    <Content Include="catalog_ffi.dll" Condition="Exists('catalog_ffi.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.6.1" />

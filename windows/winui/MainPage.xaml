@@ -8,42 +8,63 @@
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
-    <!-- Phase 0 spike: virtualized tile grid under load + theme swap.
-         Stands in for the library gallery (covers arrive Phase 1). -->
+    <!-- Phase 1 gallery: live engine binding. Browse roots + sorts,
+         throttled cover fill (disk cache + off-thread decode),
+         cancellable loads, silent fresh start. -->
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <StackPanel Orientation="Horizontal" Spacing="12" Padding="12">
-            <TextBlock Text="Catalog spike" FontSize="20" VerticalAlignment="Center" />
-            <TextBlock x:Name="CountText" VerticalAlignment="Center" />
+            <TextBlock Text="Catalog" FontSize="20" VerticalAlignment="Center" />
+            <ComboBox x:Name="BrowseBox" MinWidth="120" SelectionChanged="BrowseBox_Changed" />
+            <ComboBox x:Name="SortBox" MinWidth="120" SelectionChanged="SortBox_Changed" />
+            <Button Content="Reload" Click="Reload_Click" />
             <ToggleButton x:Name="ThemeToggle" Content="Dark" Click="ThemeToggle_Click" />
         </StackPanel>
 
-        <ScrollViewer Grid.Row="1">
+        <!-- Empty: centered No-books + guidance. No popups on fresh start. -->
+        <StackPanel x:Name="EmptyView" Grid.Row="1"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Spacing="8" Visibility="Collapsed">
+            <TextBlock x:Name="EmptyTitle" Text="No books" FontSize="16"
+                       HorizontalAlignment="Center" />
+            <TextBlock x:Name="EmptyHint"
+                       Text="No library configured — Settings UI lands in Phase 2"
+                       FontSize="12" HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" x:Name="GridScroll">
             <ItemsRepeater x:Name="Tiles">
                 <ItemsRepeater.Layout>
-                    <!-- Toolkit v8 virtualizing wrap (UniformGridLayout is
-                         gone in v8; WrapLayout is its successor). -->
                     <controls:WrapLayout HorizontalSpacing="8" VerticalSpacing="8"
                                           Orientation="Horizontal" />
                 </ItemsRepeater.Layout>
                 <ItemsRepeater.ItemTemplate>
-                    <DataTemplate x:DataType="x:String">
-                        <Border Width="160" Height="220" CornerRadius="6"
+                    <DataTemplate x:DataType="local:TileItem">
+                        <Border Width="160" Height="240" CornerRadius="6"
                                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1" Padding="8">
-                            <StackPanel Spacing="8">
-                                <Border Height="140" CornerRadius="4" Background="SteelBlue" />
-                                <TextBlock Text="{Binding}" TextWrapping="Wrap" MaxLines="2" />
+                            <StackPanel Spacing="4">
+                                <Border Height="150" CornerRadius="4" Background="SteelBlue">
+                                    <Image Source="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                </Border>
+                                <TextBlock Text="{x:Bind Title}" MaxLines="1" />
+                                <TextBlock Text="{x:Bind Subtitle}" FontSize="11" MaxLines="1"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                         </Border>
                     </DataTemplate>
                 </ItemsRepeater.ItemTemplate>
             </ItemsRepeater>
         </ScrollViewer>
+
+        <Border Grid.Row="2" Padding="12,4" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+            <TextBlock x:Name="StatusText" FontSize="12" />
+        </Border>
     </Grid>
 </Page>

@@ -9,7 +9,8 @@ windows/**/.vs/
 windows/**/TestResults/
 # Inno installer output (built on win10, staged to debian, never committed)
 windows/install/
-# Recipe-owned native DLL copy (win10: copied into src/CatalogWin/ before
-# build so single-file publish bundles it; rebuilt from crates/ each time)
+# Recipe-owned native DLL copies (win10: copied into the project dir before
+# build so publish bundles/ships them; rebuilt from crates/ each time)
 windows/src/CatalogWin/catalog_ffi.dll
+windows/winui/catalog_ffi.dll
 build
