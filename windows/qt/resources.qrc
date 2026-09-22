@@ -4,6 +4,9 @@
   <qresource prefix="/catalog">
     <file alias="help.html">assets/help.html</file>
     <file alias="donatel.png">assets/donatel.png</file>
-    <file alias="appicon.ico">../src/CatalogWin/AppIcon.ico</file>
+    <!-- Canonical mirror of windows/src/CatalogWin/AppIcon.ico (itself
+         generated from Resources/AppIcon.icns): the Qt tree builds
+         standalone on win10, no ../src coupling. -->
+    <file alias="appicon.ico">assets/appicon.ico</file>
   </qresource>
 </RCC>

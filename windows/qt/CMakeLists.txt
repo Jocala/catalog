@@ -40,6 +40,9 @@ set(SOURCES
     kobojob.cpp
     theme.cpp
 )
+if(WIN32)
+    list(APPEND SOURCES catalogqt.rc)
+endif()
 
 set(HEADERS
     ffi.h

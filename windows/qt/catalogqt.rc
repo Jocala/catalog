@@ -1,0 +1,4 @@
+// Windows exe icon (Explorer + taskbar): the catalog AppIcon,
+// mirrored at assets/appicon.ico so this tree builds standalone.
+#include <windows.h>
+IDI_ICON1 ICON "assets/appicon.ico"
