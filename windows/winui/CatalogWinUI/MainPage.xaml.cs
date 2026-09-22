@@ -1,13 +1,13 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using CatalogWinUICore;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
-using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 
 namespace CatalogWinUI;
@@ -20,8 +20,8 @@ public sealed class TileItem : INotifyPropertyChanged
     public string Path { get; init; } = "";
     public bool HasCover { get; init; }
 
-    private SoftwareBitmapSource? _cover;
-    public SoftwareBitmapSource? Cover
+    private BitmapImage? _cover;
+    public BitmapImage? Cover
     {
         get => _cover;
         set { _cover = value; OnPropertyChanged(); }
@@ -41,12 +41,14 @@ public sealed partial class MainPage : Page
 
     private readonly ObservableCollection<TileItem> _tiles = new();
     private readonly SemaphoreSlim _coverGate = new(6, 6);
+    private readonly HashSet<string> _inflight = new();
+    private readonly object _inflightGate = new();
     private readonly CoverCache _covers;
     private CancellationTokenSource? _loadCts;
-    private bool _syncingBoxes;
     private string _config = "";
     private bool _ready;
     private bool _probed;
+    private bool _syncingBoxes;
 
     private static readonly string[] BrowseModes = ["Books", "Authors", "Series", "Tags"];
     private static readonly string[] BookSorts = ["Author", "A-Z", "Z-A", "Date", "Oldest"];
@@ -60,9 +62,84 @@ public sealed partial class MainPage : Page
             "Jocala", "Catalog", "Covers");
         _covers = new CoverCache(coverRoot);
         Tiles.ItemsSource = _tiles;
+        Tiles.ElementPrepared += Tiles_Prepared;
         BrowseBox.ItemsSource = BrowseModes;
         BrowseBox.SelectedIndex = 0;
         Loaded += async (_, _) => await ReloadAsync();
+    }
+
+    // Covers are visibility-gated: only realized (on-screen) tiles fetch,
+    // decode, and marshal. Filling all N thousand at load drowns the UI
+    // thread in texture uploads (measured: frozen gallery, zero covers).
+    private void Tiles_Prepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs e)
+    {
+        if (e.Element is not FrameworkElement fe || fe.DataContext is not TileItem tile)
+            return;
+        if (tile.Cover is not null || !tile.HasCover || string.IsNullOrEmpty(tile.Path))
+            return;
+        lock (_inflightGate)
+        {
+            if (!_inflight.Add(tile.Path)) return;
+        }
+        CancellationToken ct = _loadCts?.Token ?? CancellationToken.None;
+        Task.Run(async () =>
+        {
+            try
+            {
+                await _coverGate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    byte[]? jpeg;
+                    if (_covers.TryGet(tile.Path, out string file))
+                    {
+                        jpeg = await File.ReadAllBytesAsync(file, ct);
+                    }
+                    else
+                    {
+                        jpeg = await Native.CoverAsync(_config, tile.Path, 160, 220);
+                        if (jpeg is null) return;
+                        _covers.Put(tile.Path, jpeg);
+                    }
+                    if (ct.IsCancellationRequested) return;
+                    byte[] copy = jpeg;
+                    DispatcherQueue.TryEnqueue(async () =>
+                    {
+                        try
+                        {
+                            if (ct.IsCancellationRequested) return;
+                            // Small-JPEG decode on the UI thread: the bytes
+                            // are already here; worker decode proved
+                            // unreliable, and this is sub-ms per tile.
+                            var bmp = new BitmapImage();
+                            using var stream = new InMemoryRandomAccessStream();
+                            await stream.WriteAsync(copy.AsBuffer());
+                            stream.Seek(0);
+                            await bmp.SetSourceAsync(stream);
+                            tile.Cover = bmp;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error("CoverUI", $"{tile.Path}: {ex.Message}");
+                        }
+                    });
+                }
+                finally
+                {
+                    _coverGate.Release();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Cover", $"{tile.Path}: {ex.Message}");
+            }
+            finally
+            {
+                lock (_inflightGate) _inflight.Remove(tile.Path);
+            }
+        }, ct);
     }
 
     private void SetSorts()
@@ -121,6 +198,7 @@ public sealed partial class MainPage : Page
         var cts = new CancellationTokenSource();
         _loadCts = cts;
         CancellationToken ct = cts.Token;
+        lock (_inflightGate) _inflight.Clear();
 
         SetStatus("Loading…");
         EmptyView.Visibility = Visibility.Collapsed;
@@ -197,8 +275,8 @@ public sealed partial class MainPage : Page
             SetStatus($"{tiles.Count} shown ({total} books)");
             Log.Info("Gallery", $"load done mode={mode} tiles={tiles.Count} total={total}");
             _ready = true;
-
-            _ = FillCoversAsync(cts);
+            // Covers fill per visible tile via Tiles_Prepared — nothing
+            // to kick here; the repeater realizes on layout.
         }
         catch (OperationCanceledException)
         {
@@ -216,82 +294,6 @@ public sealed partial class MainPage : Page
             Log.Error("Gallery", $"load failed {msg}");
             SetStatus(msg.Split('\n')[0]);
             await ShowErrorAsync(msg);
-        }
-    }
-
-    private async Task FillCoversAsync(CancellationTokenSource cts)
-    {
-        var jobs = _tiles.Where(t => t.HasCover && !string.IsNullOrEmpty(t.Path)).ToList();
-        await Task.Run(async () =>
-        {
-            try
-            {
-                foreach (var tile in jobs)
-                {
-                    if (cts.IsCancellationRequested) break;
-                    await _coverGate.WaitAsync(cts.Token).ConfigureAwait(false);
-                    _ = FillOneCoverAsync(tile, cts.Token)
-                        .ContinueWith(_ => _coverGate.Release());
-                }
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        });
-    }
-
-    private async Task FillOneCoverAsync(TileItem tile, CancellationToken ct)
-    {
-        try
-        {
-            byte[]? jpeg;
-            if (_covers.TryGet(tile.Path, out string file))
-            {
-                jpeg = await File.ReadAllBytesAsync(file, ct);
-            }
-            else
-            {
-                jpeg = await Native.CoverAsync(_config, tile.Path, 160, 220);
-                if (jpeg is null || ct.IsCancellationRequested) return;
-                _covers.Put(tile.Path, jpeg);
-            }
-            SoftwareBitmap? sb = await DecodeAsync(jpeg);
-            if (sb is null || ct.IsCancellationRequested) return;
-            DispatcherQueue.TryEnqueue(async () =>
-            {
-                try
-                {
-                    var src = new SoftwareBitmapSource();
-                    await src.SetBitmapAsync(sb);
-                    tile.Cover = src;
-                }
-                catch
-                {
-                }
-            });
-        }
-        catch
-        {
-        }
-    }
-
-    private static async Task<SoftwareBitmap?> DecodeAsync(byte[] jpeg)
-    {
-        try
-        {
-            using var stream = new InMemoryRandomAccessStream();
-            using (var writer = new DataWriter(stream))
-            {
-                writer.WriteBytes(jpeg);
-                await writer.StoreAsync();
-            }
-            stream.Seek(0);
-            BitmapDecoder decoder = await BitmapDecoder.CreateAsync(stream);
-            return await decoder.GetSoftwareBitmapAsync();
-        }
-        catch
-        {
-            return null;
         }
     }
 
