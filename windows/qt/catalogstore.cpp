@@ -93,10 +93,17 @@ void CatalogStore::requestDetail(qint64 id) {
     startLoad("detail", QString::number(id));
 }
 
+QString CatalogStore::resolveKoboIp() const {
+    QString ip = m_settings.koboIp.trimmed();
+    if (ip.isEmpty() && m_settings.koboIps.size() == 1)
+        ip = m_settings.koboIps.first().trimmed();
+    return ip;
+}
+
 void CatalogStore::openOnKobo(qint64 id, const QString &title, const QString &author) {
     emit statusChanged(QString("Opening “%1” on Kobo…").arg(title), true, false);
     AppSettings s = m_settings;
-    QString ip = s.koboIp.trimmed();
+    QString ip = resolveKoboIp();
     if (ip.isEmpty()) {
         emit statusChanged("Kobo IP not set — enter it in Settings → Kobo", true, false);
         return;
@@ -124,7 +131,7 @@ void CatalogStore::openOnKobo(qint64 id, const QString &title, const QString &au
 void CatalogStore::syncOnKobo(qint64 id, const QString &title) {
     emit statusChanged(QString("Syncing “%1” to Kobo…").arg(title), true, false);
     AppSettings s = m_settings;
-    QString ip = s.koboIp.trimmed();
+    QString ip = resolveKoboIp();
     QFuture<QJsonObject> f = QtConcurrent::run([s, ip, id]() {
         return KoboJob::sync(s, ip, id);
     });

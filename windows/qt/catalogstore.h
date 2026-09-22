@@ -68,6 +68,9 @@ private:
     void applyLoad(const LoadResult &r);
     void fetchCover(const QString &path, int gen);
     QString statusCounts();
+    // Default Kobo IP: explicit default wins; a single configured Kobo
+    // is the default without starring.
+    QString resolveKoboIp() const;
 
     AppSettings m_settings;
     BookModel m_model;

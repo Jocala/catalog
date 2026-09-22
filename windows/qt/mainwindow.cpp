@@ -34,9 +34,9 @@ QSize TileDelegate::sizeHint(const QStyleOptionViewItem &, const QModelIndex &) 
 void TileDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
                          const QModelIndex &idx) const {
     p->save();
-    if (opt.state & QStyle::State_Selected) {
-        p->fillRect(opt.rect, opt.palette.highlight());
-    } else if (opt.state & QStyle::State_MouseOver) {
+    // No selection fill: a clicked book looks identical to an unclicked
+    // one (house rule). Hover tint stays as the position cue.
+    if (opt.state & QStyle::State_MouseOver) {
         p->fillRect(opt.rect, opt.palette.alternateBase());
     }
     QRect coverRect(opt.rect.x() + 6, opt.rect.y() + 4, 187, 240);

@@ -264,8 +264,15 @@ void SettingsDialog::onKoboAdd() {
     if (ip.isEmpty() || m_settings.koboIps.contains(ip))
         return;
     m_settings.koboIps.append(ip);
+    if (m_settings.koboIp.trimmed().isEmpty()) {
+        // First/only IP becomes the default (WPF parity) — a single
+        // configured Kobo never needs starring.
+        m_settings.koboIp = ip;
+        m_koboStatus->setText(QString("Added %1 (default)").arg(ip));
+    } else {
+        m_koboStatus->setText(QString("Added %1").arg(ip));
+    }
     m_newKobo->clear();
-    m_koboStatus->setText(QString("Added %1").arg(ip));
     refreshKoboRows();
 }
 
@@ -279,6 +286,10 @@ void SettingsDialog::refreshKoboRows() {
         QHBoxLayout *row = new QHBoxLayout();
         bool isDefault = (m_settings.koboIp == ip);
         QPushButton *star = new QPushButton(isDefault ? "★" : "☆", this);
+        // Golden default, mirroring WPF: a monochrome ★ reads as
+        // unchanged (the reported "star doesn't change state").
+        if (isDefault)
+            star->setStyleSheet("color: goldenrod; font-weight: bold; font-size: 14pt;");
         connect(star, &QPushButton::clicked, this, [this, ip]() {
             m_settings.koboIp = ip;
             m_koboStatus->setText(QString("Default Kobo: %1").arg(ip));
