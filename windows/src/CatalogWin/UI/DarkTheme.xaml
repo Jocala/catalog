@@ -1,9 +1,0 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- Dark chrome brushes. Same keys as LightTheme.xaml — UI/Theme swaps
-         the whole dictionary, so every DynamicResource reference follows.
-         All control styling comes from the Fluent theme (App.xaml). -->
-    <SolidColorBrush x:Key="AppPanelBackground" Color="#2D2D30"/>
-    <SolidColorBrush x:Key="AppMuted" Color="#9E9E9E"/>
-    <SolidColorBrush x:Key="AppTileBack" Color="#1F808080"/>
-</ResourceDictionary>

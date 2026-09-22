@@ -1,16 +1,10 @@
 /target/
-catalog-swift/build/
 .DS_Store
+build
 
-# Windows (WPF) — CatalogWin inside windows/
+# Build trees live outside the repo (win10/debian ~/build-catalogqt,
+# Mac source/builds/); belt-and-braces in case one ever lands here:
 windows/**/bin/
 windows/**/obj/
 windows/**/.vs/
 windows/**/TestResults/
-# Inno installer output (built on win10, staged to debian, never committed)
-windows/install/
-# Recipe-owned native DLL copies (win10: copied into the project dir before
-# build so publish bundles/ships them; rebuilt from crates/ each time)
-windows/src/CatalogWin/catalog_ffi.dll
-windows/winui/CatalogWinUI/catalog_ffi.dll
-build

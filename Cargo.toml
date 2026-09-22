@@ -1,13 +1,11 @@
 [workspace]
+# Qt direction (2026-09-22): the workspace is the engine (core + FFI)
+# plus the CLI acceptance harness. egui/gtk/macos shells were archived
+# to source/backups/catalog-frozen-crates-* (re-add to members to build).
 members = [
     "crates/catalog-core",
     "crates/catalog-cli",
     "crates/catalog-ffi",
-    "crates/catalog-gtk",
-    "crates/catalog-macos",
-    # catalog-egui is FROZEN (perf: SwiftUI verdict in catalog-swift/).
-    # Kept on disk as reference; re-add to members to build it.
-    # "crates/catalog-egui",
 ]
 resolver = "2"
 

@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="CatalogWinUI/CatalogWinUI.csproj" />
-  <Project Path="CatalogWinUICore/CatalogWinUICore.csproj" />
-  <Project Path="CatalogWinUI.Tests/CatalogWinUI.Tests.csproj" />
-</Solution>
