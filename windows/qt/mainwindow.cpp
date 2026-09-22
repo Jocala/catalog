@@ -25,6 +25,18 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+// TEMP diagnostics (revert before merge): GUI-app stdout is invisible,
+// so startup evidence goes to %TEMP%/qt-diag.txt.
+#include <QFile>
+#include <QTextStream>
+static void diag(const QString &line) {
+    QFile f(QDir::tempPath() + "/qt-diag.txt");
+    if (f.open(QIODevice::Append | QIODevice::Text)) {
+        QTextStream s(&f);
+        s << line << "\n";
+    }
+}
+
 TileDelegate::TileDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
 
 QSize TileDelegate::sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const {
@@ -346,6 +358,7 @@ void MainWindow::onStatus(const QString &text, bool kobo, bool ok) {
 
 void MainWindow::onLoading(bool loading) {
     qDebug() << "TEMP onLoading" << loading << "rows=" << m_store.model()->rowCount();
+    diag(QString("onLoading loading=%1 rows=%2").arg(loading).arg(m_store.model()->rowCount()));
     if (loading) {
         m_stack->setCurrentWidget(m_loadingPage);
         return;
@@ -361,6 +374,7 @@ void MainWindow::onLoading(bool loading) {
 
 void MainWindow::onDbError(const QString &message) {
     qDebug() << "TEMP onDbError:" << message.left(160);
+    diag("onDbError: " + message.left(160));
     if (!m_store.settings().hasSource())
         return; // fresh start: silent, the empty page guides to Settings
     QMessageBox::StandardButton r = QMessageBox::warning(

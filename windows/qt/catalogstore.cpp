@@ -6,6 +6,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPair>
+// TEMP: QFile/QTextStream/QDir for qt-diag.txt startup evidence.
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
 #include <QTimer>
 #include <QtConcurrent>
 
@@ -233,6 +237,14 @@ void CatalogStore::onLoaded() {
 
 void CatalogStore::applyLoad(const LoadResult &r) {
     qDebug() << "TEMP applyLoad kind=" << r.kind << "err=" << r.error.left(120);
+    {
+        QFile f(QDir::tempPath() + "/qt-diag.txt");
+        if (f.open(QIODevice::Append | QIODevice::Text)) {
+            QTextStream s(&f);
+            s << "applyLoad kind=" << r.kind << " err=" << r.error.left(120)
+              << " rowsBefore=" << m_model.rowCount() << "\n";
+        }
+    }
     if (!r.error.isEmpty()) {
         emit dbError(r.error);
         return;
