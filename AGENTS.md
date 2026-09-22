@@ -91,11 +91,15 @@ Developer ID signing) ‖ win10 `cargo clean -p catalog-ffi && cargo build
 
 Wave 3 — Mac notarize (`notary-jeff`), staple, `spctl` accept ‖ win10
 (full-path per-user SDK 10 — machine SDK 9 cannot target net10):
+copy `catalog_ffi.dll` into `src/CatalogWin/` BEFORE build (recipe-owned,
+gitignored — csproj flows it into the single-file bundle), then
 `dotnet build CatalogWin.sln -c Release` (0/0) + `dotnet test` (all
-pass), copy `catalog_ffi.dll` next to the exe output, confirm no
-`JocalaCatalog.exe.WebView2/` cache and no stray `bin\Release` tree,
+pass), `dotnet publish … -c Release -r win-x64 --self-contained true`
+(single-file flags in csproj; confirm `publish\` holds only
+`JocalaCatalog.exe` +pdb, no `Assets\`), launch-smoke the single exe,
+confirm no `JocalaCatalog.exe.WebView2/` cache and no stray `bin\Release` tree,
 then compile `windows/installer/catalog.iss` with
-`C:\bin\inno\ISCC.exe /DVERSION=$VERSION` (full installer, AppId below,
+`C:\bin\inno\ISCC.exe /DVERSION=$VERSION` (single-exe installer, AppId below,
 publisher `Jocala Software`, `OutputBaseFilename=jocala-catalog.$VERSION`).
 `scp` the exe back to the Mac (`/tmp/jocala-catalog.$VERSION.exe`).
 

@@ -218,6 +218,7 @@ public partial class MainWindow : Window
     }
 
     // Same help.html ships in the Mac app (Sources/CatalogSwiftApp/Resources).
+    // On Windows it is enclosed in the exe (WPF Resource, NavigateToString).
     private void Help_Click(object sender, RoutedEventArgs e)
     {
         new HelpWindow { Owner = this }.Show();

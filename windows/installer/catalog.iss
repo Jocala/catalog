@@ -27,14 +27,13 @@ UninstallDisplayName=Jocala Catalog
 WizardStyle=modern
 
 [Files]
-; Entire self-contained publish tree: JocalaCatalog.exe (apphost) +
-; JocalaCatalog.dll + catalog_ffi.dll + .NET deps + Assets\help.html
-; (loose file the viewer opens). win-x64 only (FFI is x64-native).
-; Excludes: WebView2 auto-creates <exe>.WebView2\EBWebView user-data cache
-; on first run inside the output dir — never ship it (profile junk).
-; Diagnostics ballast never needed at runtime: PDBs + DiaSymReader,
-; crash-dump and debugging natives, XML doc files.
-Source: "..\src\CatalogWin\bin\x64\Release\net10.0-windows\publish\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion; Excludes: "*.WebView2, *.pdb, createdump*, mscordaccore*, mscordbi.dll, *DiaSymReader*, *.xml"
+; Single-file self-contained publish: exactly one JocalaCatalog.exe
+; (managed + .NET runtime + catalog_ffi.dll + WebView2 loader, compressed).
+; help.html is enclosed in the exe (WPF Resource) — no loose Assets dir.
+; No Excludes needed (no PDBs/diagnostics ship in the bundle).
+; Runtime note: WebView2 still creates a <exe>.WebView2\EBWebView user-data
+; dir next to the exe on first run — same as 1.0, never in the installer.
+Source: "..\src\CatalogWin\bin\x64\Release\net10.0-windows\publish\JocalaCatalog.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Jocala Catalog"; Filename: "{app}\JocalaCatalog.exe"

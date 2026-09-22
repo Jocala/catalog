@@ -4,8 +4,11 @@
 // call these on the WPF UI thread. Errors surface as CatalogDbException
 // with the same dialog text as the C# Services backend.
 //
-// DLL placement (win10): catalog_ffi.dll sits next to CatalogWin.exe
-// (cargo build --release on the VM, copy into the publish dir).
+// DLL placement (win10): catalog_ffi.dll is copied into the project dir
+// BEFORE build (recipe-owned, gitignored) so it flows through build output
+// into the single-file bundle — embedded, extracted at startup, resolved by
+// the DllImport below. Never a loose file in publish/. (cargo build
+// --release on the VM, copy into src/CatalogWin/).
 // Fallback: Services/CalibreDb+SmbReader+Covers (pure C#, OS UNC) stays
 // intact — if the Rust transport ever regresses, flip the call sites back.
 

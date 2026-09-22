@@ -4,8 +4,10 @@ using System.Windows;
 namespace CatalogWin;
 
 // Internal help viewer (WebView2, Edge engine — same help.html ships in
-// the Mac app). File-local navigation stays in the viewer; web links open
-// in the default browser.
+// the Mac app). The page is enclosed in the exe as a WPF Resource (no loose
+// file, single-file release) and rendered via NavigateToString — the html
+// is self-contained (no sub-resources). File-local navigation stays in the
+// viewer; web links open in the default browser.
 public partial class HelpWindow : Window
 {
     public HelpWindow()
@@ -19,10 +21,21 @@ public partial class HelpWindow : Window
     {
         try
         {
-            string path = Path.Combine(AppContext.BaseDirectory, "Assets", "help.html");
-            if (!File.Exists(path))
+            // Enclosed Resource (csproj) — never a loose file on disk.
+            var resource = System.Windows.Application.GetResourceStream(
+                new Uri("pack://application:,,,/Assets/help.html"));
+            if (resource is null || resource.Stream is null)
             {
-                ShowError("Help file is missing.");
+                ShowError("Help content is missing.");
+                return;
+            }
+            string html;
+            using (resource.Stream)
+            using (var reader = new StreamReader(resource.Stream))
+                html = await reader.ReadToEndAsync();
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                ShowError("Help content is missing.");
                 return;
             }
             await HelpView.EnsureCoreWebView2Async();
@@ -36,7 +49,7 @@ public partial class HelpWindow : Window
             };
             HelpView.CoreWebView2.NavigationStarting += Core_NavigationStarting;
             HelpView.CoreWebView2.NavigationCompleted += (_, _) => SyncNavButtons();
-            HelpView.Source = new Uri(path);
+            HelpView.NavigateToString(html);
         }
         catch (Exception ex)
         {

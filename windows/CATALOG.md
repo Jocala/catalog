@@ -21,7 +21,7 @@ keeps `ReaderWin` only). Authoring stays in this repo
 `CatalogWin.sln`, `CATALOG.md`); mirror the CatalogWin subset on change:
 ```sh
 tar -cf /tmp/catalogwin.tar -C /Users/jeff/source/catalog/windows \
-  CatalogWin.sln CATALOG.md src/CatalogWin tests/CatalogWin.Tests
+  CatalogWin.sln CATALOG.md src/CatalogWin tests/CatalogWin.Tests installer/catalog.iss
 scp /tmp/catalogwin.tar win10:C:/source/catalogwin.tar
 # on win10: tar -xf C:\source\catalogwin.tar -C C:\source\catalog
 ```
@@ -62,19 +62,25 @@ cd C:\source\reader\catalog
 cargo build --release -p catalog-ffi
 #   -> target\release\catalog_ffi.dll
 
-# 3. Mirror this tree + copy the DLL next to the exe output:
+# 3. Mirror this tree + stage the native DLL in the project dir BEFORE
+#    build (recipe-owned, gitignored — the csproj Content item flows it
+#    through build output into the single-file bundle; must predate build):
 #   (see Layout above for the selective tar; full-tree scp also works)
 cd C:\source\catalog
+copy C:\source\reader\catalog\target\release\catalog_ffi.dll src\CatalogWin\catalog_ffi.dll
 %LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe build CatalogWin.sln -c Release
 %LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe test tests\CatalogWin.Tests -c Release
-copy C:\source\reader\catalog\target\release\catalog_ffi.dll src\CatalogWin\bin\x64\Release\net10.0-windows\
 ```
 
-Self-contained publish (no .NET runtime needed on the target machine;
-win-x64 only — the FFI DLL is x64-native; no SingleFile, never trim WPF):
+Single-file self-contained publish (no .NET runtime needed on the target
+machine; win-x64 only — the FFI DLL is x64-native; never trim WPF).
+Flags live in the csproj (PublishSingleFile + compression + native
+self-extract); RID comes from the command line. help.html is enclosed in
+the exe (WPF Resource) — publish/ holds exactly one JocalaCatalog.exe:
 ```powershell
 %LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe publish src\CatalogWin\CatalogWin.csproj -c Release -r win-x64 --self-contained true -o src\CatalogWin\bin\x64\Release\net10.0-windows\publish
-copy C:\source\reader\catalog\target\release\catalog_ffi.dll src\CatalogWin\bin\x64\Release\net10.0-windows\publish\
+dir src\CatalogWin\bin\x64\Release\net10.0-windows\publish
+# expect: JocalaCatalog.exe only (+pdb) — no Assets\, no loose dlls
 # Launch to test: ...\net10.0-windows\publish\JocalaCatalog.exe
 ```
 
