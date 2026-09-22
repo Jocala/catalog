@@ -30,8 +30,10 @@ below except where a live procedure depends on them.
   covers, rich list rows (`ListDelegate`). Assets mirrored in-tree
   (`assets/`: `help.html`, `donatel.png`, `appicon.ico`,
   `AppIcon.icns` — canonical). Per-platform build scripts beside it
-  (`build-catalogqt-windows.ps1`, `build-catalogqt-macos.sh`;
-  Linux still uses raw cmake — script TODO).
+  (`build-catalogqt-{windows.ps1,macos.sh,linux.sh}` for build +
+  `ctest`, `package-catalogqt-{windows.ps1,macos.sh,linux.sh}` for
+  packaging; all run from anywhere, all take `--clean`/`-Clean` for a
+  fresh build).
   `packaging/catalogqt.iss.in` (single-exe Inno installer).
 - `crates/catalog-core/` — GUI-free Rust business logic (the only thing UI crates may depend on); `tests/fixtures/` holds the 4-book `metadata.db` + `make-fixture.sql`
 - `crates/catalog-ffi/` — C ABI over core (staticlib for the Qt shells, JSON in/out, blocking fns, tokio inside); 6 smoke tests vs fixture
@@ -53,15 +55,23 @@ below except where a live procedure depends on them.
 - What's proven (do not regress): core 33 unit + 6 golden tests, FFI 6 smoke tests, `cargo clippy --workspace --all-targets -- -D warnings` clean. Live SMB vs debian: NTLMv2, 6755 books in ~5s, `author:austen` works.
 - FFI metadata cache: 60s TTL process-wide, `"fresh":"1"` bypasses (Reload semantics). Stale-read window is by design.
 - russh is pinned at 0.52: 0.63 was refused by the resolver against the smb RC crypto. Do not bump without re-resolving.
-- Windows native: Rust 1.98.1 MSVC on win10; live parity user-driven.
-- Linux native (debian): Rust 1.98.1, `libcatalog_ffi.a` 110MB, Qt 6.8.2 system libs, `JocalaCatalog` 46MB linked, `ctest` 3/3 (offscreen). CMakeLists carries the Linux link set (Threads/DL/m + bz2 + lzma for the engine's zip backend).
+- Windows native: Rust 1.98.1 MSVC on win10; Qt build + `ctest` 4/4
+  green 2026-09-22 via `build-catalogqt-windows.ps1`; live parity user-driven.
+- Linux native (debian): Rust 1.98.1, `libcatalog_ffi.a` 110MB, Qt 6.8.2 system libs, `JocalaCatalog` 46MB linked, `ctest` 4/4 (offscreen). CMakeLists carries the Linux link set (Threads/DL/m + bz2 + lzma for the engine's zip backend).
 - macOS native (this Mac arm64): Rust 1.98.1, universal `libcatalog_ffi.a` 158MB (lipo of both arches), static Qt 6.11.1, universal `JocalaCatalog.app` 85MB, `ctest` 4/4. Build script: `qt/build-catalogqt-macos.sh`. Unsigned local run only so far — SMB proof + sign/notarize still open.
 - Rules: `catalog-core` takes **no GUI dependencies**, ever; `catalog-ffi` fns are all **blocking** (tokio runtime inside — shells call off UI thread); no `unwrap()` on new library paths.
 - Verify: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`.
 
 ## Windows MCP mechanics (win10 `192.168.1.170`)
-- `run-command` handles minutes-long builds inline — no `sleep`
-  polling; poll background sessions with `read-session-output`.
+- `run-command` times out on multi-minute builds (proven 2026-09-22:
+  foreground cargo builds died on both win10 and debian) — run long
+  builds as background sessions (`open-session type=background` with
+  fully path-qualified, single-line commands, no `cd`) and poll with
+  `read-session-output`. Sessions vanish when the command exits, so
+  confirm via artifacts (fresh binary, ctest logs).
+- Stale CMake cache: if configure errors `source ... does not match
+  the source ... used to generate cache`, rerun with `-Clean`
+  (build dir predates a source-tree move).
 - Interactive sessions unsupported (POSIX-shell handshake);
   `open-session type=background` needs fully path-qualified,
   single-line commands (no `cd`).
@@ -83,20 +93,22 @@ Per-platform builds (independent — different machines, no shared
 state — run in any order, or parallel where noted):
 
 - **win10** (primary): mirror `qt` + Rust `crates/` +
-  `Cargo.toml`/`Cargo.lock` (qt-subset tar); `cargo build --release
-  -p catalog-ffi` with `RUSTFLAGS=-C target-feature=+crt-static`
-  (shop Qt is /MT); run `build-catalogqt-windows.ps1` from
-  `C:\source\catalog\qt` (cmake configure + build + `ctest`, all
-  green); `package-win` target or direct ISCC on
-  `packaging/catalogqt.iss.in` (`admin` + `{commonpf}`, AppId below,
-  single `JocalaCatalog.exe`); `scp` the installer back to the Mac.
-- **debian** (`192.168.1.39`): mirror same; plain `cargo build
-  --release -p catalog-ffi`; cmake against system Qt
-  (`qt6-base-dev`) + build + `ctest` (offscreen — headless box).
-  No packaging format chosen yet (tarball/AppImage/deb TBD).
+  `Cargo.toml`/`Cargo.lock` (qt-subset tar); run
+  `build-catalogqt-windows.ps1` from `C:\source\catalog\qt` (cargo
+  with `RUSTFLAGS=-C target-feature=+crt-static` to match shop Qt's
+  /MT, then cmake configure + build + `ctest`, all green);
+  `package-catalogqt-windows.ps1` after build (wraps the `package-win`
+  target / ISCC on `packaging/catalogqt.iss.in`: `admin` +
+  `{commonpf}`, AppId below, single `JocalaCatalog.exe`); `scp` the
+  installer back to the Mac.
+- **debian** (`192.168.1.39`): mirror same; run
+  `qt/build-catalogqt-linux.sh` (plain cargo, cmake against system Qt
+  `qt6-base-dev`, build + `ctest` offscreen — headless box);
+  `qt/package-catalogqt-linux.sh` after build (CPack TGZ).
 - **macOS** (this Mac): `qt/build-catalogqt-macos.sh` (universal Rust
-  lib via lipo + universal app + `ctest`); sign (`notary-jeff`) +
-  notarize + DMG still open.
+  lib via lipo + universal app + `ctest`);
+  `qt/package-catalogqt-macos.sh` after build (CPack DragNDrop,
+  unsigned — sign (`notary-jeff`) + notarize + stapled DMG still open).
 
 Preconditions: sources committed (mirror from the fixed commit — a
 mid-release source change must never race the builds); target VMs up

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Mac build for CatalogQt (mirrors adblink: static Qt, universal app,
 # ctest). First run builds both Rust arches + lipo (~2 min); incremental
-# after that. Run from anywhere.
+# after that. Run from anywhere. Pass --clean for a fresh build (wipes
+# the CMake build dir + universal FFI lib; cargo target/ stays incremental).
 set -euo pipefail
 
 SRC="/Users/jeff/source/catalog"
@@ -10,6 +11,11 @@ BLD="/Users/jeff/source/builds/catalogqt"
 FFI="$BLD/libcatalog_ffi.a"
 CMAKE="/opt/homebrew/bin/cmake"
 CTEST="/opt/homebrew/bin/ctest"
+
+if [[ "${1:-}" == "--clean" ]]; then
+    rm -rf "$BLD"
+fi
+mkdir -p "$BLD"
 
 cargo build --release -p catalog-ffi --target aarch64-apple-darwin \
     --manifest-path "$SRC/Cargo.toml"

@@ -181,6 +181,20 @@ if(WIN32)
         DEPENDS catalogqt
         COMMENT "Generating Inno Setup installer..."
     )
+else()
+    # adblink pattern: DragNDrop DMG on macOS, TGZ tarball on Linux.
+    # (Mac sign + notarize stays outside CPack until that item lands.)
+    set(CPACK_PACKAGE_VENDOR "jocala")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Ebook library browser for a Calibre library")
+    if(APPLE)
+        set(CPACK_GENERATOR "DragNDrop")
+    elseif(UNIX)
+        set(CPACK_GENERATOR "TGZ")
+        set(CPACK_STRIP_FILES ON)
+    endif()
+    set(CPACK_BINARY_TZ OFF)
+    set(CPACK_BINARY_STGZ OFF)
+    include(CPack)
 endif()
 
 enable_testing()
