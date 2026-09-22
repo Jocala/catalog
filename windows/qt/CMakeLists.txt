@@ -129,7 +129,9 @@ elseif(APPLE)
         ${IOKIT_FRAMEWORK}
         ${SECURITY_FRAMEWORK}
         ${SYSCONFIG_FRAMEWORK}
-        ${COREFOUNDATION_FRAMEWORK})
+        ${COREFOUNDATION_FRAMEWORK}
+        # System libs the engine's zip backend expects (SDK .tbd stubs).
+        bz2 lzma)
 else()
     # Linux: pthreads + dl + libm for the same staticlib, plus the
     # system libs the engine's zip backend expects (bzip2, xz).
