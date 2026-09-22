@@ -75,8 +75,17 @@ target_include_directories(catalogqt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(catalogqt PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent
     ${FFI_LIB}
-    ws2_32 bcrypt ntdll userenv advapi32
 )
+if(WIN32)
+    # Native sockets/crypto/account APIs the Rust staticlib needs on MSVC.
+    target_link_libraries(catalogqt PRIVATE
+        ws2_32 bcrypt ntdll userenv advapi32)
+else()
+    # Linux: pthreads + dl + libm for the same staticlib.
+    find_package(Threads REQUIRED)
+    target_link_libraries(catalogqt PRIVATE
+        Threads::Threads ${CMAKE_DL_LIBS} m)
+endif()
 
 if(WIN32)
     qt_import_plugins(catalogqt
