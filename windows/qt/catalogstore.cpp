@@ -232,6 +232,7 @@ void CatalogStore::onLoaded() {
 }
 
 void CatalogStore::applyLoad(const LoadResult &r) {
+    qDebug() << "TEMP applyLoad kind=" << r.kind << "err=" << r.error.left(120);
     if (!r.error.isEmpty()) {
         emit dbError(r.error);
         return;

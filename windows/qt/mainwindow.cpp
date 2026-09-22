@@ -345,6 +345,7 @@ void MainWindow::onStatus(const QString &text, bool kobo, bool ok) {
 }
 
 void MainWindow::onLoading(bool loading) {
+    qDebug() << "TEMP onLoading" << loading << "rows=" << m_store.model()->rowCount();
     if (loading) {
         m_stack->setCurrentWidget(m_loadingPage);
         return;
@@ -359,6 +360,7 @@ void MainWindow::onLoading(bool loading) {
 }
 
 void MainWindow::onDbError(const QString &message) {
+    qDebug() << "TEMP onDbError:" << message.left(160);
     if (!m_store.settings().hasSource())
         return; // fresh start: silent, the empty page guides to Settings
     QMessageBox::StandardButton r = QMessageBox::warning(
