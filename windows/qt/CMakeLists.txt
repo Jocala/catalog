@@ -162,8 +162,10 @@ elseif(APPLE)
 endif()
 
 # Install layout: single exe + nothing else (help/about assets ride in qrc).
+# BUNDLE DESTINATION covers the macOS .app (RUNTIME covers exe platforms).
 install(TARGETS catalogqt
     RUNTIME DESTINATION .
+    BUNDLE DESTINATION .
 )
 
 if(WIN32)
