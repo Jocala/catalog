@@ -193,3 +193,20 @@ exact byte sizes.
   re-notarize. About + Help user-verified. Windows mirrored to win10,
   `dotnet build` 0/0, `dotnet test` 30/30. `.build/` removed — `build/`
   is the only build location (`--scratch-path build/check` for checks).
+- 2026-09-21/22 session (Qt port + Rust Kobo flows, committed `265c20f`;
+  verdict: borderline acceptable, quits for now): `windows/qt/` full
+  Widgets app (gallery, detail, settings, search, about/help, theme,
+  status; static Qt 6.11.1 + static `catalog_ffi`, single
+  `JocalaCatalog.exe` ~40 MB, installer 12.8 MB via `package-win`).
+  Rust: russh 0.52 transport (`kobo/ssh.rs`; 0.63 refused by resolver vs
+  smb RC crypto), open/sync flows (`kobo/open.rs`, `kobo/sync.rs`),
+  FFI db cache (60s TTL, `"fresh":"1"` bypass), SMB session pool,
+  CLI `kobo`/`cover` probes. Hardware-proven vs Color `.74` (key,
+  password, 255-reject, timeout). Perf work: single-watcher cover bug,
+  6-gate throttle, FFI cache, pixmap+batched paints, session pool —
+  6700 SMB borderline-OK once covers cache; local 300 snappy; Read on
+  Kobo works through Qt. Deferred: gate tuning/prefetch, satellite
+  trim, WPF freeze decision, Qt production release (`.iss` points at
+  publish tree). Test site still serves 1.0 (WPF/.NET + Mac).
+  win10 trees current (`C:\source\catalog`, `C:\source\reader\catalog`).
+  Nothing running.

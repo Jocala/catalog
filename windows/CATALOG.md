@@ -27,6 +27,24 @@ scp /tmp/catalogwin.tar win10:C:/source/catalogwin.tar
 ```
 The Rust tree stays at `C:\source\reader\catalog\` (cargo workspace root).
 
+## Qt port (`qt/`, static Qt 6.11.1 + static catalog_ffi)
+
+Full Widgets app (gallery, detail, settings, search, about/help, theme,
+bottom status bar) consuming the same C ABI as the WPF bridge — no .NET.
+Builds to a single `JocalaCatalog.exe` (~40 MB); installer 12.8 MB.
+
+```powershell
+# win10, from C:\source\catalog\qt (mirrored from repo windows/qt):
+.\build-catalogqt-windows.ps1   # configure + build + ctest
+# Rust staticlib MUST use: set RUSTFLAGS=-C target-feature=+crt-static
+# (shop Qt is /MT; dynamic-CRT Rust objects fail LNK4098/1120)
+```
+
+Settings schema is shared with WPF (`%APPDATA%/com.jocala.Catalog/settings.json`,
+identical keys) — the Qt build migrates seamlessly. Perf verdict
+2026-09-22: 6700 SMB borderline-OK once covers cache (FFI db cache +
+6-gate throttle + session pool all landed for this); local 300 snappy.
+
 ## Build (on win10, from C:\source\catalog, via win10 MCP)
 
 Prereqs on the VM (verify once): Rust toolchain (`rustup`, MSVC host) +
