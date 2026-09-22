@@ -6,6 +6,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPair>
+// TEMP: QFile/QTextStream/QDir for qt-cover.txt evidence.
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
 #include <QTimer>
 #include <QtConcurrent>
 
@@ -317,20 +321,37 @@ QString CatalogStore::statusCounts() {
 }
 
 void CatalogStore::onCoverNeeded(const QString &path) {
-    if (path.isEmpty() || m_inFlight.contains(path) || m_coverCache.contains(path))
+    // TEMP: capped decision log (revert with the rest).
+    static int nd = 0;
+    auto dlog = [&](const char *what) {
+        if (nd++ >= 40) return;
+        QFile f(QDir::tempPath() + "/qt-cover.txt");
+        if (f.open(QIODevice::Append | QIODevice::Text)) {
+            QTextStream s(&f);
+            s << "need " << what << " " << path << "\n";
+        }
+    };
+    if (path.isEmpty() || m_inFlight.contains(path) || m_coverCache.contains(path)) {
+        dlog("skip");
         return;
+    }
     // Disk first: warm starts never touch SMB for covers (small local
     // read, fine on the UI thread).
     QByteArray jpg;
     if (m_diskCache.tryGet(path, jpg)) {
         QImage img;
         if (img.loadFromData(jpg)) {
+            dlog("diskhit");
             onCoverBatch(path, img);
             return;
         }
+        dlog("diskcorrupt");
     }
-    if (m_coverActive >= COVER_MAX)
+    if (m_coverActive >= COVER_MAX) {
+        dlog("coalesce");
         return; // coalesce: the path re-demands on its next realize
+    }
+    dlog("fetch");
     fetchCover(path, m_coverGen);
 }
 
@@ -363,10 +384,28 @@ void CatalogStore::fetchCover(const QString &path, int gen) {
 }
 
 void CatalogStore::onCoverBatch(const QString &path, const QImage &img) {
+    // TEMP: capped receipt/eviction log (revert with the rest).
+    static int nb = 0;
+    auto blog = [&](const QString &what) {
+        if (nb++ >= 40) return;
+        QFile f(QDir::tempPath() + "/qt-cover.txt");
+        if (f.open(QIODevice::Append | QIODevice::Text)) {
+            QTextStream s(&f);
+            s << "batch " << what << " " << path << " mem=" << m_coverCache.size() << "\n";
+        }
+    };
+    if (img.isNull()) {
+        blog("nullimg");
+        return;
+    }
     if (!img.isNull()) {
         m_coverCache.insert(path, img);
-        if (m_coverCache.size() > 256)
-            m_coverCache.erase(m_coverCache.begin());
+        if (m_coverCache.size() > 256) {
+            auto it = m_coverCache.begin();
+            blog(QString("evict ") + it.key());
+            m_coverCache.erase(it);
+        }
+        blog("insert");
         m_coverPending.append(qMakePair(path, img));
         if (!m_coverFlushScheduled) {
             m_coverFlushScheduled = true;
