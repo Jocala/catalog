@@ -124,6 +124,8 @@ verify download URL(s) 200 with exact byte sizes.
 ## Currently staged (test site only, no prod push)
 - WPF 1.0 + Mac DMG 1.0 (Swift), committed `d214530`. Qt stages
   beside them when promoted (`jocala-catalog-qt.1.0.exe`).
+- Stable revert point 2026-09-22: Qt + engine consolidated, all three
+  platforms green, repo clean — the milestone commit below.
 - Full session history lives in git log; retired trees in
   `/Users/jeff/source/backups/` final tarballs. This file carries
   no archaeology by policy — record decisions, not sessions.
