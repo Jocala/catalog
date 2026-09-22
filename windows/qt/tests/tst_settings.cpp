@@ -72,6 +72,21 @@ private slots:
         QCOMPARE(o.value("user").toString(), QString("u"));
         QCOMPARE(o.value("pass").toString(), QString("p"));
     }
+
+    void hasSource() {
+        AppSettings fresh;
+        QVERIFY(!fresh.hasSource());
+        AppSettings smb;
+        SmbServer srv;
+        srv.host = "h";
+        smb.servers.append(srv);
+        QVERIFY(smb.hasSource());
+        AppSettings local;
+        local.librarySource = "local";
+        QVERIFY(!local.hasSource());
+        local.localDir = "D:/books";
+        QVERIFY(local.hasSource());
+    }
 };
 
 QTEST_MAIN(TstSettings)

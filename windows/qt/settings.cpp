@@ -59,6 +59,12 @@ const SmbServer *AppSettings::primaryServer() const {
     return servers.isEmpty() ? nullptr : &servers.first();
 }
 
+bool AppSettings::hasSource() const {
+    if (librarySource == "local")
+        return !localDir.trimmed().isEmpty();
+    return !servers.isEmpty() && !servers.first().host.trimmed().isEmpty();
+}
+
 QString AppSettings::libraryConfigJson(bool fresh) const {
     QJsonObject o;
     if (fresh)

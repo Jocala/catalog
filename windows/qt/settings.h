@@ -36,6 +36,11 @@ struct AppSettings {
     void renameKobo(const QString &oldIp, const QString &newIp);
     const SmbServer *primaryServer() const;
 
+    // A library source is configured when the selected source has an
+    // address: first SMB server host, or a local folder. Otherwise this
+    // is a fresh start and the empty page stays silent (no popup).
+    bool hasSource() const;
+
     // FFI library-config JSON for the primary server / local dir.
     // fresh=true bypasses the FFI metadata.db cache (Reload semantics).
     QString libraryConfigJson(bool fresh = false) const;

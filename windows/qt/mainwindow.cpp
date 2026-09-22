@@ -359,6 +359,8 @@ void MainWindow::onLoading(bool loading) {
 }
 
 void MainWindow::onDbError(const QString &message) {
+    if (!m_store.settings().hasSource())
+        return; // fresh start: silent, the empty page guides to Settings
     QMessageBox::StandardButton r = QMessageBox::warning(
         this, "Calibre Database", message + "\n\nOpen Settings?",
         QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
