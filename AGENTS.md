@@ -42,9 +42,10 @@ below except where a live procedure depends on them.
 
 ## Conventions
 - No hardcoded hosts/ports/credentials; keep diffs small.
-- Qt is cross-platform by construction: every behavior change must
-  keep all three targets building (win10/debian/Mac) — verify the
-  other two, or record an explicit todo.
+- macOS is the primary dev platform (Rust engine + Qt GUI);
+  Windows and Linux build/test on an ad hoc basis. Flag anything
+  that may not port or needs platform-specific attention instead of
+  verifying all three targets on every change.
 - Cover pipeline rules (proven twice, do not regress): demand-gated
   fetches only (never queues/backlogs), 6 concurrent max, disk cache
   capped (256 MB), worker decode, coalesced repaints, silent fresh
