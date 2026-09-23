@@ -53,7 +53,7 @@ signals:
 private slots:
     void onLoaded();
     void onCoverNeeded(const QString &path);
-    void onCoverBatch(const QString &path, const QImage &img);
+    void onCoverBatch(const QString &path, QImage img);
     void flushCovers();
 
 private:

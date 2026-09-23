@@ -15,7 +15,7 @@
 namespace {
 int g_traceN = 0;
 void trace(const QString &line) {
-    if (g_traceN++ >= 250) return;
+    if (g_traceN++ >= 5000) return;
     QFile f(QDir::tempPath() + "/qt-sort.txt");
     if (f.open(QIODevice::Append | QIODevice::Text)) {
         QTextStream s(&f);
@@ -334,8 +334,18 @@ QString CatalogStore::statusCounts() {
 }
 
 void CatalogStore::onCoverNeeded(const QString &path) {
-    if (path.isEmpty() || m_inFlight.contains(path) || m_coverCache.contains(path)) {
+    if (path.isEmpty() || m_inFlight.contains(path)) {
         trace(QString("need skip gen=%1 active=%2 %3").arg(m_coverGen).arg(m_coverActive).arg(path));
+        return;
+    }
+    // Memory hit: the model may have been reset (sort/mode/search) since
+    // this arrived, so re-deliver to the model instead of assuming it is
+    // already there. (Previously this returned silently — every cover
+    // re-shown after a reset stayed blank with no refetch.)
+    auto mem = m_coverCache.find(path);
+    if (mem != m_coverCache.end()) {
+        trace(QString("need memhit gen=%1 %2").arg(m_coverGen).arg(path));
+        onCoverBatch(path, *mem);
         return;
     }
     // Disk first: warm starts never touch SMB for covers (small local
@@ -387,7 +397,7 @@ void CatalogStore::fetchCover(const QString &path, int gen) {
     w->setFuture(f);
 }
 
-void CatalogStore::onCoverBatch(const QString &path, const QImage &img) {
+void CatalogStore::onCoverBatch(const QString &path, QImage img) {
     if (img.isNull()) {
         trace(QString("batch nullimg %1").arg(path));
         return;
