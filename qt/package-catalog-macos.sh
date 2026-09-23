@@ -23,5 +23,5 @@ NOTARY_PROFILE="notary-jeff"
 DMG="$BUILD_DIR/packages/catalog-1.0-Darwin.dmg"
 xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"
-spctl -a -vv "$DMG"
+xcrun stapler validate "$DMG"
 ls -lh "$BUILD_DIR/packages/"
