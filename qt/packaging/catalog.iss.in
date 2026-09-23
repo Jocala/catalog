@@ -1,4 +1,4 @@
-; Jocala Catalog Qt — Inno Setup installer (single static exe + help
+; Jocala Catalog — Inno Setup installer (single static exe + help
 ; rides inside the binary via qrc). Same product as the WPF build:
 ; same AppId so installing replaces it, same publisher.
 #ifndef VERSION
@@ -14,8 +14,8 @@ AppPublisher=Jocala Software
 AppPublisherURL=https://www.jocala.com/catalog/
 DefaultDirName={autopf}\Jocala Catalog
 DefaultGroupName=Jocala Catalog
-OutputDir=..\install-qt
-OutputBaseFilename=jocala-catalog-qt.{#VERSION}
+OutputDir=..\install
+OutputBaseFilename=jocala-catalog.{#VERSION}
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible

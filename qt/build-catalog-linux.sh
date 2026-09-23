@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Linux build for CatalogQt (mirrors adblink: cmake + build + ctest).
+# Linux build for Catalog (mirrors adblink: cmake + build + ctest).
 # System Qt via qt6-base-dev (no CMAKE_PREFIX_PATH). Headless box, so
 # ctest runs offscreen. Run from anywhere. Pass --clean for a fresh
 # build (wipes the CMake build dir; cargo target/ stays incremental).
@@ -7,7 +7,7 @@ set -euo pipefail
 
 SRC="/zstore/source/catalog"
 QTREE="$SRC/qt"
-BLD="/home/jeff/build-catalogqt"
+BLD="/home/jeff/build-catalog"
 FFI="$SRC/target/release/libcatalog_ffi.a"
 
 if [[ "${1:-}" == "--clean" ]]; then

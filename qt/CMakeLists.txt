@@ -1,7 +1,7 @@
-# CatalogQt: Qt Widgets + static Rust catalog-ffi (replaces CatalogWin).
+# Catalog: Qt Widgets + static Rust catalog-ffi (replaces CatalogWin).
 # Mirrors adblink conventions (static Qt, Ninja, Qt Test, package-win).
 cmake_minimum_required(VERSION 3.16)
-project(catalogqt VERSION 1.0 LANGUAGES C CXX)
+project(catalog VERSION 1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,7 +53,7 @@ set(SOURCES
     listdelegate.cpp
 )
 if(WIN32)
-    list(APPEND SOURCES catalogqt.rc)
+    list(APPEND SOURCES catalog.rc)
 endif()
 
 set(HEADERS
@@ -83,19 +83,19 @@ if(APPLE)
         PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 endif()
 
-qt_add_executable(catalogqt
+qt_add_executable(catalog
     ${SOURCES}
     ${HEADERS}
     resources.qrc
     ${APP_ICON_MACOS}
 )
 
-set_target_properties(catalogqt PROPERTIES OUTPUT_NAME "JocalaCatalog")
+set_target_properties(catalog PROPERTIES OUTPUT_NAME "JocalaCatalog")
 
 if(APPLE)
-    set_target_properties(catalogqt PROPERTIES
+    set_target_properties(catalog PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.jocala.catalogqt"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.jocala.catalog"
         MACOSX_BUNDLE_BUNDLE_NAME "JocalaCatalog"
         MACOSX_BUNDLE_ICON_FILE "AppIcon"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
@@ -103,15 +103,15 @@ if(APPLE)
     )
 endif()
 
-target_include_directories(catalogqt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(catalog PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-target_link_libraries(catalogqt PRIVATE
+target_link_libraries(catalog PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent
     ${FFI_LIB}
 )
 if(WIN32)
     # Native sockets/crypto/account APIs the Rust staticlib needs on MSVC.
-    target_link_libraries(catalogqt PRIVATE
+    target_link_libraries(catalog PRIVATE
         ws2_32 bcrypt ntdll userenv advapi32)
 elseif(APPLE)
     # Frameworks for static Qt + the Rust staticlib (TLS/roots, system
@@ -123,7 +123,7 @@ elseif(APPLE)
     find_library(SECURITY_FRAMEWORK Security REQUIRED)
     find_library(SYSCONFIG_FRAMEWORK SystemConfiguration REQUIRED)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
-    target_link_libraries(catalogqt PRIVATE
+    target_link_libraries(catalog PRIVATE
         ${COCOA_FRAMEWORK}
         ${CARBON_FRAMEWORK}
         ${IOKIT_FRAMEWORK}
@@ -136,12 +136,12 @@ else()
     # Linux: pthreads + dl + libm for the same staticlib, plus the
     # system libs the engine's zip backend expects (bzip2, xz).
     find_package(Threads REQUIRED)
-    target_link_libraries(catalogqt PRIVATE
+    target_link_libraries(catalog PRIVATE
         Threads::Threads ${CMAKE_DL_LIBS} m bz2 lzma)
 endif()
 
 if(WIN32)
-    qt_import_plugins(catalogqt
+    qt_import_plugins(catalog
         INCLUDE Qt6::QWindowsIntegrationPlugin
         INCLUDE Qt6::QModernWindowsStylePlugin
         INCLUDE Qt6::QSvgIconPlugin
@@ -151,7 +151,7 @@ if(WIN32)
         INCLUDE Qt6::QJpegPlugin
     )
 elseif(APPLE)
-    qt_import_plugins(catalogqt
+    qt_import_plugins(catalog
         INCLUDE Qt6::QCocoaIntegrationPlugin
         INCLUDE Qt6::QMacStylePlugin
         INCLUDE Qt6::QSvgIconPlugin
@@ -165,20 +165,20 @@ endif()
 
 # Install layout: single exe + nothing else (help/about assets ride in qrc).
 # BUNDLE DESTINATION covers the macOS .app (RUNTIME covers exe platforms).
-install(TARGETS catalogqt
+install(TARGETS catalog
     RUNTIME DESTINATION .
     BUNDLE DESTINATION .
 )
 
 if(WIN32)
     configure_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/catalogqt.iss.in"
-        "${CMAKE_BINARY_DIR}/catalogqt.iss"
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/catalog.iss.in"
+        "${CMAKE_BINARY_DIR}/catalog.iss"
         @ONLY
     )
     add_custom_target(package-win
-        COMMAND "c:/bin/inno/iscc" "${CMAKE_BINARY_DIR}/catalogqt.iss"
-        DEPENDS catalogqt
+        COMMAND "c:/bin/inno/iscc" "${CMAKE_BINARY_DIR}/catalog.iss"
+        DEPENDS catalog
         COMMENT "Generating Inno Setup installer..."
     )
 else()

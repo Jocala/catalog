@@ -2,7 +2,7 @@
 .DS_Store
 build
 
-# Build trees live outside the repo (win10/debian ~/build-catalogqt,
+# Build trees live outside the repo (win10/debian ~/build-catalog,
 # Mac source/builds/); belt-and-braces in case one ever lands here:
 **/bin/
 **/obj/

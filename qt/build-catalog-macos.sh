@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mac build for CatalogQt (mirrors adblink: static Qt, universal app,
+# Mac build for Catalog (mirrors adblink: static Qt, universal app,
 # ctest). First run builds both Rust arches + lipo (~2 min); incremental
 # after that. Run from anywhere. Pass --clean for a fresh build (wipes
 # the CMake build dir + universal FFI lib; cargo target/ stays incremental).
@@ -7,7 +7,7 @@ set -euo pipefail
 
 SRC="/Users/jeff/source/catalog"
 QTREE="$SRC/qt"
-BLD="/Users/jeff/source/builds/catalogqt"
+BLD="/Users/jeff/source/builds/catalog"
 FFI="$BLD/libcatalog_ffi.a"
 CMAKE="/opt/homebrew/bin/cmake"
 CTEST="/opt/homebrew/bin/ctest"

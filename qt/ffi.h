@@ -1,5 +1,5 @@
 #pragma once
-// C ABI surface used by CatalogQt (mirrors catalog-ffi; JSON in/out).
+// C ABI surface used by Catalog (mirrors catalog-ffi; JSON in/out).
 // Blocking calls with the tokio runtime inside — invoke off the UI thread.
 #include <stddef.h>
 

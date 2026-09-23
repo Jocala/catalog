@@ -1,8 +1,17 @@
-param()
+param(
+    [switch]$Clean
+)
 
-$BuildDir = "$env:USERPROFILE\build-catalogqt"
+$SourceDir = "C:\source\catalog\qt"
+$BuildDir = "$env:USERPROFILE\build-catalog"
+$CatalogRoot = "C:\source\catalog"
+$FfiLib = "$CatalogRoot\target\release\catalog_ffi.lib"
 
-# Locate vcvars64.bat (mirrors build-catalogqt-windows.ps1, pin 14.51 to
+if ($Clean -and (Test-Path $BuildDir)) {
+    Remove-Item -Recurse -Force $BuildDir
+}
+
+# Locate vcvars64.bat (mirrors build-adblink-windows.ps1, pin 14.51 to
 # match Qt 6.11.1-static).
 $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
 $vcvars = $null
@@ -27,5 +36,10 @@ cmd /c "`"$vcvars`" -vcvars_ver=14.51 > nul 2>&1 && set" | ForEach-Object {
     }
 }
 
-cmake --build $BuildDir --target package-win
-Get-ChildItem "$BuildDir\packages\"
+$env:RUSTFLAGS = "-C target-feature=+crt-static"
+cargo build --release -p catalog-ffi --manifest-path "$CatalogRoot\Cargo.toml"
+Remove-Item Env:RUSTFLAGS
+
+cmake -S $SourceDir -B $BuildDir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:\Qt\Qt.6.11.1-static" -DFFI_LIB="$FfiLib"
+cmake --build $BuildDir
+ctest --test-dir $BuildDir --output-on-failure
