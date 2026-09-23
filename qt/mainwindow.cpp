@@ -11,7 +11,6 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialog>
-#include <QDir>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QMenuBar>
@@ -190,6 +189,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(&m_store, &CatalogStore::loadingChanged, this, &MainWindow::onLoading);
     connect(&m_store, &CatalogStore::dbError, this, &MainWindow::onDbError);
     connect(&m_store, &CatalogStore::koboOutcome, this, &MainWindow::onKoboOutcome);
+    connect(&m_store, &CatalogStore::handoffOffer, this, &MainWindow::onHandoffOffer);
     connect(&m_store, &CatalogStore::detailReady, this, &MainWindow::onDetailReady);
 
     refreshSortBox();
@@ -387,8 +387,21 @@ void MainWindow::onDbError(const QString &message) {
         m_store.reload();
 }
 
-void MainWindow::onKoboOutcome(const QJsonObject &o) {
-    QString status = o.value("status").toString();
+void MainWindow::onHandoffOffer(const QString &ip) {
+    Q_UNUSED(ip);
+    QMessageBox box(QMessageBox::Question, "KOReader stacking fix",
+        "KOReader can pile up reader instances when opening book after book. "
+        "Install a tiny, reversible fix on the Kobo so each new book replaces the last? "
+        "Reading goes ahead either way.",
+        QMessageBox::NoButton, this);
+    box.addButton("Install", QMessageBox::AcceptRole);
+    box.addButton("Not Now", QMessageBox::RejectRole);
+    box.exec();
+    m_store.answerHandoff(box.clickedButton() &&
+        box.buttonRole(box.clickedButton()) == QMessageBox::AcceptRole);
+}
+
+void MainWindow::onKoboOutcome(const QJsonObject &o) {    QString status = o.value("status").toString();
     if (status == "opened")
         return;
     if (status == "missing") {

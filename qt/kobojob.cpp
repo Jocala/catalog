@@ -58,3 +58,13 @@ QJsonObject KoboJob::ssh(const QString &ip, const QString &cmd, const QString &p
     QByteArray raw = QJsonDocument(cfg).toJson(QJsonDocument::Compact);
     return outcomeOf(catalog_kobo_ssh(raw.constData()));
 }
+
+QJsonObject KoboJob::handoffCheck(const QString &ip) {
+    QByteArray ipB = ip.toUtf8();
+    return outcomeOf(catalog_kobo_handoff_check(ipB.constData()));
+}
+
+QJsonObject KoboJob::handoffEnsure(const QString &ip) {
+    QByteArray ipB = ip.toUtf8();
+    return outcomeOf(catalog_kobo_handoff_ensure(ipB.constData()));
+}

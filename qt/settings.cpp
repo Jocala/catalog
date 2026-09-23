@@ -135,6 +135,7 @@ AppSettings AppSettings::load() {
     for (const QJsonValue &kv : o.value("KoboIps").toArray())
         s.koboIps.append(kv.toString());
     s.koboPasswords = o.value("KoboPasswords").toObject();
+    s.koboHandoffPromptDone = o.value("KoboHandoffPromptDone").toBool(false);
     s.theme = o.value("ThemePreference").toInt(0);
     return s;
 }
@@ -169,6 +170,7 @@ bool AppSettings::save(const AppSettings &s) {
         ips.append(ip);
     o.insert("KoboIps", ips);
     o.insert("KoboPasswords", s.koboPasswords);
+    o.insert("KoboHandoffPromptDone", s.koboHandoffPromptDone);
     o.insert("ThemePreference", s.theme);
     QFile f(settingsPath());
     QDir().mkpath(QFileInfo(f).absolutePath());

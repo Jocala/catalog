@@ -15,7 +15,7 @@
 namespace {
 int g_traceN = 0;
 void trace(const QString &line) {
-    if (g_traceN++ >= 5000) return;
+    if (g_traceN++ >= 250) return;
     QFile f(QDir::tempPath() + "/qt-sort.txt");
     if (f.open(QIODevice::Append | QIODevice::Text)) {
         QTextStream s(&f);
@@ -117,13 +117,97 @@ QString CatalogStore::resolveKoboIp() const {
 }
 
 void CatalogStore::openOnKobo(qint64 id, const QString &title, const QString &author) {
-    emit statusChanged(QString("Opening “%1” on Kobo…").arg(title), true, false);
-    AppSettings s = m_settings;
     QString ip = resolveKoboIp();
     if (ip.isEmpty()) {
         emit statusChanged("Kobo IP not set — enter it in Settings → Kobo", true, false);
         return;
     }
+    if (m_settings.koboHandoffPromptDone || m_handoffBusy) {
+        proceedOpenKobo(id, title, author, ip);
+        return;
+    }
+    // First Read on Kobo: check the stacking fix before opening.
+    m_pendingHandoff = {id, title, author, ip};
+    m_handoffBusy = true;
+    emit statusChanged("Checking Kobo stacking fix…", true, false);
+    QFuture<QJsonObject> f = QtConcurrent::run([ip]() {
+        return KoboJob::handoffCheck(ip);
+    });
+    QFutureWatcher<QJsonObject> *w = new QFutureWatcher<QJsonObject>(this);
+    connect(w, &QFutureWatcher<QJsonObject>::finished, this,
+            &CatalogStore::onHandoffChecked);
+    w->setFuture(f);
+}
+
+void CatalogStore::markHandoffPromptDone() {
+    m_settings.koboHandoffPromptDone = true;
+    AppSettings::save(m_settings);
+}
+
+void CatalogStore::onHandoffChecked() {
+    auto *w = static_cast<QFutureWatcher<QJsonObject> *>(sender());
+    QJsonObject o = w ? w->result() : QJsonObject();
+    if (w) w->deleteLater();
+    HandoffOpen p = m_pendingHandoff;
+    if (o.value("status").toString() == "failed" || o.value("code").toInt(-1) != 0) {
+        // Can't verify (Kobo asleep? password-only login — the check is
+        // key-only BatchMode). Don't nag; ask never again, just open.
+        m_handoffBusy = false;
+        markHandoffPromptDone();
+        proceedOpenKobo(p.id, p.title, p.author, p.ip);
+        return;
+    }
+    if (o.value("installed").toBool(false)) {
+        m_handoffBusy = false;
+        markHandoffPromptDone();
+        proceedOpenKobo(p.id, p.title, p.author, p.ip);
+        return;
+    }
+    emit handoffOffer(p.ip);
+}
+
+void CatalogStore::answerHandoff(bool install) {
+    HandoffOpen p = m_pendingHandoff;
+    if (!install) {
+        m_handoffBusy = false;
+        markHandoffPromptDone();
+        proceedOpenKobo(p.id, p.title, p.author, p.ip);
+        return;
+    }
+    emit statusChanged("Installing Kobo stacking fix…", true, false);
+    QString ip = p.ip;
+    QFuture<QJsonObject> f = QtConcurrent::run([ip]() {
+        return KoboJob::handoffEnsure(ip);
+    });
+    QFutureWatcher<QJsonObject> *w = new QFutureWatcher<QJsonObject>(this);
+    connect(w, &QFutureWatcher<QJsonObject>::finished, this,
+            &CatalogStore::onHandoffEnsured);
+    w->setFuture(f);
+}
+
+void CatalogStore::onHandoffEnsured() {
+    auto *w = static_cast<QFutureWatcher<QJsonObject> *>(sender());
+    QJsonObject o = w ? w->result() : QJsonObject();
+    if (w) w->deleteLater();
+    HandoffOpen p = m_pendingHandoff;
+    m_handoffBusy = false;
+    markHandoffPromptDone();
+    QString state = o.value("state").toString();
+    if (state == "installed" || state == "already") {
+        emit statusChanged("Stacking fix installed", true, true);
+    } else {
+        QString msg = o.value("status").toString() == "failed"
+            ? o.value("message").toString()
+            : o.value("output").toString();
+        emit statusChanged(QString("Stacking fix install failed: %1").arg(msg.left(120)), true, false);
+    }
+    proceedOpenKobo(p.id, p.title, p.author, p.ip);
+}
+
+void CatalogStore::proceedOpenKobo(qint64 id, const QString &title, const QString &author,
+                                   const QString &ip) {
+    emit statusChanged(QString("Opening “%1” on Kobo…").arg(title), true, false);
+    AppSettings s = m_settings;
     QFuture<QJsonObject> f = QtConcurrent::run([s, ip, title, author, id]() {
         return KoboJob::open(s, ip, title, author, id);
     });

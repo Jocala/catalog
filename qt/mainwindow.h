@@ -38,6 +38,7 @@ private slots:
     void onLoading(bool loading);
     void onDbError(const QString &message);
     void onKoboOutcome(const QJsonObject &outcome);
+    void onHandoffOffer(const QString &ip);
     void onDetailReady(const DetailItem &detail);
     void onHelp();
     void onAbout();

@@ -27,6 +27,7 @@ struct AppSettings {
     QString koboIp;          // default Kobo
     QStringList koboIps;
     QJsonObject koboPasswords; // ip -> ssh password
+    bool koboHandoffPromptDone = false; // stacking-fix offer, asked once
     int theme = 0;           // 0 system, 1 light, 2 dark
 
     QString smbPassword(const QString &host) const;

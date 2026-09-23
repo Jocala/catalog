@@ -1,6 +1,7 @@
 #include "settingsdialog.h"
 #include "ffi.h"
 #include "ffijson.h"
+#include "kobojob.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -161,12 +162,52 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
     m_newKobo->setFixedWidth(150);
     QPushButton *addBtn = new QPushButton("Add", koboGroup);
     connect(addBtn, &QPushButton::clicked, this, &SettingsDialog::onKoboAdd);
+    QPushButton *fixBtn = new QPushButton("Install stacking fix", koboGroup);
+    fixBtn->setToolTip("Install the KOReader stacking-fix on the active Kobo (needs key login)");
+    connect(fixBtn, &QPushButton::clicked, this, [this, fixBtn]() {
+        // Active Kobo: explicit default wins, else the single configured IP.
+        QString ip = m_settings.koboIp.trimmed();
+        if (ip.isEmpty() && m_settings.koboIps.size() == 1)
+            ip = m_settings.koboIps.first().trimmed();
+        if (ip.isEmpty()) {
+            m_koboStatus->setStyleSheet("color: gray");
+            m_koboStatus->setText("No active Kobo — add an IP first.");
+            return;
+        }
+        fixBtn->setEnabled(false);
+        m_koboStatus->setStyleSheet("color: gray");
+        m_koboStatus->setText(QString("Installing stacking fix on %1…").arg(ip));
+        QFutureWatcher<QJsonObject> *w = new QFutureWatcher<QJsonObject>(this);
+        connect(w, &QFutureWatcher<QJsonObject>::finished, this, [this, ip, fixBtn, w]() {
+            QJsonObject o = w->result();
+            w->deleteLater();
+            fixBtn->setEnabled(true);
+            QString state = o.value("state").toString();
+            if (state == "installed" || state == "already") {
+                m_settings.koboHandoffPromptDone = true;
+                m_koboStatus->setStyleSheet("color: green");
+                m_koboStatus->setText(state == "already"
+                    ? QString("Stacking fix already on %1").arg(ip)
+                    : QString("Stacking fix installed on %1").arg(ip));
+            } else {
+                QString msg = o.value("status").toString() == "failed"
+                    ? o.value("message").toString()
+                    : o.value("output").toString();
+                m_koboStatus->setStyleSheet("color: red");
+                m_koboStatus->setText(
+                    QString("Stacking fix failed on %1: %2").arg(ip, msg.left(120)));
+            }
+        });
+        w->setFuture(QtConcurrent::run([ip]() { return KoboJob::handoffEnsure(ip); }));
+    });
     addRow->addWidget(m_newKobo);
     addRow->addWidget(addBtn);
+    addRow->addWidget(fixBtn);
     addRow->addStretch();
     koboLay->addLayout(addRow);
     QLabel *koboHint = new QLabel(
-        "Star selects default for Read on Kobo. IP + password edit in place; password is optional. Ping tests awake.",
+        "Star selects default for Read on Kobo. IP + password edit in place; password is optional. Test checks "
+        "the connection. Fix installs the KOReader stacking-fix on the active Kobo (needs key login).",
         koboGroup);
     koboHint->setWordWrap(true);
     koboHint->setStyleSheet("color: gray");

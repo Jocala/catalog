@@ -43,9 +43,13 @@ private slots:
         QCOMPARE(back.smbPassword("192.168.1.39"), QString("secret"));
         QCOMPARE(back.koboIp, QString("192.168.1.74"));
         QCOMPARE(back.koboIps.size(), 2);
+        QVERIFY(!back.koboHandoffPromptDone);
         QCOMPARE(back.koboPassword("192.168.1.74"), QString("1234"));
         QVERIFY(back.koboPassword("10.0.0.9").isNull());
         QCOMPARE(back.theme, 2);
+        back.koboHandoffPromptDone = true;
+        QVERIFY(AppSettings::save(back));
+        QVERIFY(AppSettings::load().koboHandoffPromptDone);
         back.renameKobo("192.168.1.74", "192.168.1.76");
         QCOMPARE(back.koboIp, QString("192.168.1.76"));
         QCOMPARE(back.koboPassword("192.168.1.76"), QString("1234"));

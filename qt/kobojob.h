@@ -12,5 +12,9 @@ struct KoboJob {
     static QJsonObject sync(const AppSettings &s, const QString &ip, qint64 bookId);
     static QJsonObject ssh(const QString &ip, const QString &cmd, const QString &pw,
                            int timeoutSecs);
+    // Stacking-fix preflight (key login only — the check runs BatchMode).
+    // Returns {"installed",...} / {"state",...}, or {"status":"failed",...}.
+    static QJsonObject handoffCheck(const QString &ip);
+    static QJsonObject handoffEnsure(const QString &ip);
     static QString koboAuthPassword(const AppSettings &s, const QString &ip);
 };

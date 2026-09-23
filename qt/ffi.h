@@ -34,6 +34,8 @@ char *catalog_kobo_match(const char *candidates_json, const char *title,
 char *catalog_kobo_open(const char *config_json);
 char *catalog_kobo_sync(const char *config_json);
 char *catalog_kobo_ssh(const char *config_json);
+char *catalog_kobo_handoff_check(const char *kobo_ip);
+char *catalog_kobo_handoff_ensure(const char *kobo_ip);
 
 #ifdef __cplusplus
 }

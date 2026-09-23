@@ -32,6 +32,9 @@ signals:
     void dbError(const QString &message);
     void koboOutcome(const QJsonObject &outcome);
     void searchDone(int bookCount, int seriesCount);
+    // First-run stacking-fix offer: MainWindow asks Install / Not Now,
+    // then calls answerHandoff. Emitted off the load path, never modal here.
+    void handoffOffer(const QString &ip);
 
 public slots:
     void reload(bool fresh = false);
@@ -46,12 +49,16 @@ public slots:
     void requestDetail(qint64 id);
     void openOnKobo(qint64 id, const QString &title, const QString &author);
     void syncOnKobo(qint64 id, const QString &title);
+    // Answer to handoffOffer: install the fix, then open; otherwise just open.
+    void answerHandoff(bool install);
 
 signals:
     void detailReady(const DetailItem &detail);
 
 private slots:
     void onLoaded();
+    void onHandoffChecked();
+    void onHandoffEnsured();
     void onCoverNeeded(const QString &path);
     void onCoverBatch(const QString &path, QImage img);
     void flushCovers();
@@ -111,5 +118,13 @@ private:
     // to the model on a 120ms tick (one layout pass per batch).
     QList<QPair<QString, QImage>> m_coverPending;
     bool m_coverFlushScheduled = false;
+    // First-run handoff gate: the open stashed here while the
+    // check/offer/install chain runs. Asked once per installation.
+    struct HandoffOpen { qint64 id = -1; QString title; QString author; QString ip; };
+    HandoffOpen m_pendingHandoff;
+    bool m_handoffBusy = false;
+    void proceedOpenKobo(qint64 id, const QString &title, const QString &author,
+                         const QString &ip);
+    void markHandoffPromptDone();
     QFutureWatcher<LoadResult> m_watcher;
 };
