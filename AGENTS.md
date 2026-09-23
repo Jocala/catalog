@@ -64,7 +64,7 @@ below except where a live procedure depends on them.
   added for Qt Network (`C:/openssl-static`, adblink pattern) —
   unverified until that build.
 - Linux native (debian): Rust 1.98.1, `libcatalog_ffi.a` 110MB, Qt 6.8.2 system libs, `JocalaCatalog` 46MB linked, `ctest` 4/4 (offscreen; 5th test lands on next release build). CMakeLists carries the Linux link set (Threads/DL/m + bz2 + lzma for the engine's zip backend).
-- macOS native (this Mac arm64): Rust 1.98.1, universal `libcatalog_ffi.a` 158MB (lipo of both arches), static Qt 6.11.1, universal `JocalaCatalog.app` 99MB, `ctest` 5/5. Build script: `qt/build-catalog-macos.sh`. Unsigned local run only so far — SMB proof + sign/notarize still open.
+- macOS native (this Mac arm64): Rust 1.98.1, universal `libcatalog_ffi.a` 158MB (lipo of both arches), static Qt 6.11.1, universal `JocalaCatalog.app` 99MB, `ctest` 5/5. Build script: `qt/build-catalog-macos.sh`. Signed + notarized DMG via `qt/package-catalog-macos.sh` (profile `notary-jeff`, adblink-pattern entitlements + sign-after-install).
 - Rules: `catalog-core` takes **no GUI dependencies**, ever; `catalog-ffi` fns are all **blocking** (tokio runtime inside — shells call off UI thread); no `unwrap()` on new library paths.
 - Verify: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`.
 
@@ -118,7 +118,8 @@ state — run in any order, or parallel where noted):
   `qt/package-catalog-linux.sh` after build (CPack TGZ).
 - **macOS** (this Mac): `qt/build-catalog-macos.sh` (universal Rust
   lib via lipo + universal app + `ctest`);
-  `qt/package-catalog-macos.sh` after build (CPack DragNDrop,
+  `qt/package-catalog-macos.sh` after build (sign + CPack DragNDrop +
+  notarize (`notary-jeff`) + staple).
   unsigned — sign (`notary-jeff`) + notarize + stapled DMG still open).
 
 Preconditions: sources committed (mirror from the fixed commit — a

@@ -44,7 +44,7 @@ headless acceptance harness.
 - **Linux** (system Qt via `qt6-base-dev`): run `qt/build-catalog-linux.sh`,
   then `qt/package-catalog-linux.sh` (TGZ).
 - **macOS** (static Qt 6.11.1): run `qt/build-catalog-macos.sh`
-  (universal app), then `qt/package-catalog-macos.sh` (DMG).
+  (universal app), then `qt/package-catalog-macos.sh` (signed + notarized DMG).
 
 Verify: `cargo test --workspace`,
 `cargo clippy --workspace --all-targets -- -D warnings`.
