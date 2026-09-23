@@ -180,6 +180,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
     m_statusLabel = new QLabel(this);
     m_statusLabel->setContentsMargins(12, 4, 12, 4);
+    // Single-line, overwrite-only: a new message replaces the old one
+    // and can never wrap or grow the status bar.
+    m_statusLabel->setWordWrap(false);
     statusBar()->addPermanentWidget(m_statusLabel, 1);
 
     connect(&m_store, &CatalogStore::countsChanged, this, &MainWindow::onCounts);
@@ -345,12 +348,16 @@ void MainWindow::onCounts(const QString &text) {
 }
 
 void MainWindow::onStatus(const QString &text, bool kobo, bool ok) {
+    // Flatten newlines (engine messages can be multiline) so the label
+    // stays one line; assignment overwrites any previous message.
+    QString t = text;
+    t.replace('\n', ' ');
     if (!kobo) {
-        onCounts(text);
+        onCounts(t);
         return;
     }
-    m_koboActive = !text.isEmpty();
-    m_statusLabel->setText(text);
+    m_koboActive = !t.isEmpty();
+    m_statusLabel->setText(t);
     m_statusLabel->setStyleSheet(ok ? "color: green" : "color: orange");
 }
 

@@ -24,11 +24,11 @@ private slots:
     void onShowPass(bool show);
     void onKoboAdd();
     void onThemeChanged(int i);
-    void onOpenDataFolder();
     void accept() override;
 
 private:
     void refreshKoboRows();
+    void capHeight();
     void collectSmb();
     void runProbe(QLabel *pill);
     AppSettings m_settings;

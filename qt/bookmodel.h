@@ -39,5 +39,5 @@ private:
     // List-mode thumbnails: row-height versions converted once alongside
     // the full pixmaps (same batch, negligible memory).
     QHash<QString, QPixmap> m_coversSmall;
-    static const int ListThumbHeight = 40;
+    static const int ListThumbHeight = 120;
 };

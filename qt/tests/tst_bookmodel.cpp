@@ -34,12 +34,12 @@ private slots:
         QCOMPARE(full.height(), 220);
         QPixmap small = m.data(m.index(0), Qt::DecorationRole).value<QPixmap>();
         QVERIFY(!small.isNull());
-        QCOMPARE(small.height(), 40);
+        QCOMPARE(small.height(), 120);
     }
     void listRowMetrics() {
         ListDelegate d;
         QStyleOptionViewItem opt;
-        opt.rect = QRect(0, 0, 300, 56);
+        opt.rect = QRect(0, 0, 300, 136);
         QCOMPARE(d.sizeHint(opt, QModelIndex()).height(), ListDelegate::RowHeight);
     }
 };

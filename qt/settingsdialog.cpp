@@ -3,9 +3,9 @@
 #include "ffijson.h"
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QFontMetrics>
 #include <QFormLayout>
 #include <QFutureWatcher>
 #include <QGroupBox>
@@ -23,8 +23,8 @@
 #include <QPushButton>
 #include <QRadioButton>
 #include <QScrollArea>
+#include <QScreen>
 #include <QtConcurrent>
-#include <QUrl>
 #include <QVBoxLayout>
 
 namespace {
@@ -33,6 +33,13 @@ void stylePass(QLabel *l, const QString &text, bool ok) {
     l->setStyleSheet(QString("font-weight: bold; color: %1").arg(ok ? "green" : "red"));
 }
 
+// Reserve the pill width up front (bold "Fail" is the widest state) so
+// showing Pass/Fail never reflows the row.
+void fixPillWidth(QLabel *pill) {
+    QFont f = pill->font();
+    f.setBold(true);
+    pill->setMinimumWidth(QFontMetrics(f).horizontalAdvance("Fail") + 8);
+}
 // Blocking library probe off the thread: returns (ok, detail).
 QPair<bool, QString> probeLibrary(const QString &cfg) {
     QByteArray cfgB = cfg.toUtf8();
@@ -47,10 +54,16 @@ QPair<bool, QString> probeLibrary(const QString &cfg) {
 SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
     : QDialog(parent), m_settings(settings) {
     setWindowTitle("Settings");
-    resize(620, 640);
+    // Fixed width (measured against the live dialog): the Kobo rows'
+    // fixed-width controls must fit without a horizontal scrollbar.
+    // Height stays flexible — the dialog grows with Kobo rows (capped)
+    // while Save/Cancel sit outside the scroll area, always visible.
+    resize(778, 640);
+    setFixedWidth(778);
     QVBoxLayout *outer = new QVBoxLayout(this);
     QScrollArea *scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     QWidget *body = new QWidget(this);
     QVBoxLayout *top = new QVBoxLayout(body);
 
@@ -74,6 +87,7 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
     QPushButton *testLocalBtn = new QPushButton("Test", srcGroup);
     connect(testLocalBtn, &QPushButton::clicked, this, &SettingsDialog::onTestLocal);
     m_localPass = new QLabel(srcGroup);
+    fixPillWidth(m_localPass);
     localRow->addWidget(m_localDir);
     localRow->addWidget(browseBtn);
     localRow->addWidget(testLocalBtn);
@@ -94,6 +108,7 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
     QPushButton *testSmbBtn = new QPushButton("Test SMB", smbGroup);
     connect(testSmbBtn, &QPushButton::clicked, this, &SettingsDialog::onTestSmb);
     m_smbPass = new QLabel(smbGroup);
+    fixPillWidth(m_smbPass);
     smbTestRow->addWidget(testSmbBtn);
     smbTestRow->addWidget(m_smbPass);
     smbForm->addRow("SMB Server", smbTestRow);
@@ -110,6 +125,7 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
     QPushButton *testDbBtn = new QPushButton("Test Calibre", smbGroup);
     connect(testDbBtn, &QPushButton::clicked, this, &SettingsDialog::onTestDb);
     m_dbPass = new QLabel(smbGroup);
+    fixPillWidth(m_dbPass);
     dbTestRow->addWidget(testDbBtn);
     dbTestRow->addWidget(m_dbPass);
     smbForm->addRow("SMB Calibre Path", dbTestRow);
@@ -157,6 +173,7 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
     koboLay->addWidget(koboHint);
     m_koboStatus = new QLabel(koboGroup);
     m_koboStatus->setStyleSheet("color: gray");
+    m_koboStatus->setWordWrap(true);
     koboLay->addWidget(m_koboStatus);
     top->addWidget(koboGroup);
 
@@ -168,10 +185,7 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
     m_theme->setCurrentIndex(qBound(0, m_settings.theme, 2));
     connect(m_theme, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &SettingsDialog::onThemeChanged);
-    QPushButton *dataBtn = new QPushButton("Open Data Folder", genGroup);
-    connect(dataBtn, &QPushButton::clicked, this, &SettingsDialog::onOpenDataFolder);
     genLay->addWidget(m_theme);
-    genLay->addWidget(dataBtn);
     genLay->addStretch();
     top->addWidget(genGroup);
     top->addStretch();
@@ -191,6 +205,19 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
     connect(m_srcSmb, &QRadioButton::toggled, this, &SettingsDialog::onSourceChanged);
     onSourceChanged();
     refreshKoboRows();
+    capHeight();
+}
+
+// Grow with content (Kobo rows) but never past 80% of the available
+// screen height — beyond that the scroll area takes over and
+// Save/Cancel stay pinned outside it.
+void SettingsDialog::capHeight() {
+    adjustSize();
+    if (QScreen *s = screen()) {
+        int maxH = int(s->availableGeometry().height() * 0.8);
+        if (height() > maxH)
+            resize(width(), maxH);
+    }
 }
 
 void SettingsDialog::onSourceChanged() {
@@ -327,6 +354,7 @@ void SettingsDialog::refreshKoboRows() {
             refreshKoboRows();
         });
         QLabel *pill = new QLabel(this);
+        fixPillWidth(pill);
         QPushButton *testBtn = new QPushButton("Test", this);
         connect(testBtn, &QPushButton::clicked, this, [this, ip, pill]() {
             pill->setText("…");
@@ -370,13 +398,9 @@ void SettingsDialog::refreshKoboRows() {
         row->addStretch();
         m_koboRows->addLayout(row);
     }
+    capHeight();
 }
 
 void SettingsDialog::onThemeChanged(int i) {
     m_settings.theme = i;
-}
-
-void SettingsDialog::onOpenDataFolder() {
-    QDesktopServices::openUrl(
-        QUrl::fromLocalFile(qEnvironmentVariable("APPDATA") + "/com.jocala.Catalog"));
 }

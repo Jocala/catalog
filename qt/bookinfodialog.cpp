@@ -63,6 +63,7 @@ BookInfoDialog::BookInfoDialog(const BookItem &book, const DetailItem &detail,
     QPushButton *closeBtn = new QPushButton("Close", this);
     connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
     m_statusLabel = new QLabel(this);
+    m_statusLabel->setWordWrap(false);
     foot->addWidget(readBtn);
     foot->addWidget(closeBtn);
     foot->addWidget(m_statusLabel, 1);
@@ -83,7 +84,9 @@ void BookInfoDialog::setCover(const QPixmap &pm) {
 void BookInfoDialog::onKoboStatus(const QString &text, bool kobo, bool ok) {
     if (!kobo)
         return;
-    m_statusLabel->setText(text);
+    QString t = text;
+    t.replace('\n', ' ');
+    m_statusLabel->setText(t);
     m_statusLabel->setStyleSheet(ok ? "color: green" : "color: orange");
     if (ok)
         accept();

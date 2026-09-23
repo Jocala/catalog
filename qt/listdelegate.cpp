@@ -16,7 +16,7 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
         p->fillRect(opt.rect, opt.palette.alternateBase());
 
     const int margin = 8;
-    const int thumbBox = 40;
+    const int thumbBox = 120;
     int textX = opt.rect.x() + margin + thumbBox + margin;
     int textW = opt.rect.right() - textX - margin;
 
@@ -38,7 +38,7 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
     p->setPen(opt.palette.text().color());
     QFontMetrics tfm(titleFont);
     QString titleElided = tfm.elidedText(title, Qt::ElideRight, textW);
-    p->drawText(textX, opt.rect.y() + 8, textW, 22,
+    p->drawText(textX, opt.rect.y() + 48, textW, 22,
                 Qt::AlignLeft | Qt::AlignVCenter, titleElided);
 
     QFont subFont = p->font();
@@ -47,7 +47,7 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
     p->setPen(Qt::gray);
     QFontMetrics sfm(subFont);
     QString subElided = sfm.elidedText(sub, Qt::ElideRight, textW);
-    p->drawText(textX, opt.rect.y() + 30, textW, 18,
+    p->drawText(textX, opt.rect.y() + 70, textW, 18,
                 Qt::AlignLeft | Qt::AlignVCenter, subElided);
     p->restore();
 }
