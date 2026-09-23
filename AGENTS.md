@@ -58,12 +58,10 @@ below except where a live procedure depends on them.
 - What's proven (do not regress): core 33 unit + 6 golden tests, FFI 6 smoke tests, `cargo clippy --workspace --all-targets -- -D warnings` clean. Live SMB vs debian: NTLMv2, 6755 books in ~5s, `author:austen` works.
 - FFI metadata cache: 60s TTL process-wide, `"fresh":"1"` bypasses (Reload semantics). Stale-read window is by design.
 - russh is pinned at 0.52: 0.63 was refused by the resolver against the smb RC crypto. Do not bump without re-resolving.
-- Windows native: Rust 1.98.1 MSVC on win10; Qt build + `ctest` 4/4
-  green 2026-09-22 via `build-catalog-windows.ps1` (5th test lands on
-  next release build); live parity user-driven. Static OpenSSL stanza
-  added for Qt Network (`C:/openssl-static`, adblink pattern) —
-  unverified until that build.
-- Linux native (debian): Rust 1.98.1, `libcatalog_ffi.a` 110MB, Qt 6.8.2 system libs, `JocalaCatalog` 46MB linked, `ctest` 4/4 (offscreen; 5th test lands on next release build). CMakeLists carries the Linux link set (Threads/DL/m + bz2 + lzma for the engine's zip backend).
+- Windows native: Rust 1.98.1 MSVC on win10; Qt build + `ctest` 5/5
+  via `build-catalog-windows.ps1`; live parity user-driven. Static
+  OpenSSL stanza for Qt Network (`C:/openssl-static`, adblink pattern).
+- Linux native (debian): Rust 1.98.1, `libcatalog_ffi.a` 110MB, Qt 6.8.2 system libs, `JocalaCatalog` 46MB linked, `ctest` 5/5 (offscreen). CMakeLists carries the Linux link set (Threads/DL/m + bz2 + lzma for the engine's zip backend).
 - macOS native (this Mac arm64): Rust 1.98.1, universal `libcatalog_ffi.a` 158MB (lipo of both arches), static Qt 6.11.1, universal `JocalaCatalog.app` 99MB, `ctest` 5/5. Build script: `qt/build-catalog-macos.sh`. Signed + notarized DMG via `qt/package-catalog-macos.sh` (profile `notary-jeff`, adblink-pattern entitlements + sign-after-install).
 - Rules: `catalog-core` takes **no GUI dependencies**, ever; `catalog-ffi` fns are all **blocking** (tokio runtime inside — shells call off UI thread); no `unwrap()` on new library paths.
 - Verify: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`.
@@ -146,8 +144,10 @@ verify download URL(s) 200 with exact byte sizes.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently staged (test site only, no prod push)
-- WPF 1.0 + Mac DMG 1.0 (Swift), committed `d214530`. Qt stages
-  beside them when promoted (`jocala-catalog-1.0.exe`).
+- Catalog 1.0 production (2026-09-23): signed+notarized DMG, Inno EXE,
+  Linux TGZ — single product name, toolbar restore, update check.
+  Commit `d86c818` on debian (exe 15437259, dmg 40355051, tgz 12674406).
+- WPF 1.0 + Mac DMG 1.0 (Swift), committed `d214530` (superseded).
 - Stable revert point 2026-09-22: Qt + engine consolidated, all three
   platforms green, repo clean — the milestone commit below.
 - Full session history lives in git log; retired trees in
