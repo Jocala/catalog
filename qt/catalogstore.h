@@ -24,6 +24,11 @@ public:
     Mode mode() const { return m_mode; }
     Sort sort() const { return m_sort; }
     bool showingBooks() const;
+    // Startup restore: set toolbar state without starting a load
+    // (the constructor's reload() does the single load).
+    void setInitialView(Mode m, Sort s);
+    // Persist toolbar state (browse/sort from the store, view from the window).
+    void saveView(const QString &viewMode);
 
 signals:
     void countsChanged(const QString &text);

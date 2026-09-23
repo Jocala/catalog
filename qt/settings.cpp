@@ -137,6 +137,11 @@ AppSettings AppSettings::load() {
     s.koboPasswords = o.value("KoboPasswords").toObject();
     s.koboHandoffPromptDone = o.value("KoboHandoffPromptDone").toBool(false);
     s.theme = o.value("ThemePreference").toInt(0);
+    s.browseMode = qBound(0, o.value("BrowseMode").toInt(0), 3);
+    s.sortOrder = qBound(0, o.value("SortOrder").toInt(0), 4);
+    s.viewMode = o.value("ViewMode").toString("grid");
+    if (s.viewMode != "grid" && s.viewMode != "list")
+        s.viewMode = "grid";
     return s;
 }
 
@@ -172,6 +177,9 @@ bool AppSettings::save(const AppSettings &s) {
     o.insert("KoboPasswords", s.koboPasswords);
     o.insert("KoboHandoffPromptDone", s.koboHandoffPromptDone);
     o.insert("ThemePreference", s.theme);
+    o.insert("BrowseMode", s.browseMode);
+    o.insert("SortOrder", s.sortOrder);
+    o.insert("ViewMode", s.viewMode);
     QFile f(settingsPath());
     QDir().mkpath(QFileInfo(f).absolutePath());
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))

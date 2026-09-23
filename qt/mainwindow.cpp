@@ -11,6 +11,8 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialog>
+#include <QDir>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QMenuBar>
@@ -213,7 +215,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(&m_store, &CatalogStore::handoffOffer, this, &MainWindow::onHandoffOffer);
     connect(&m_store, &CatalogStore::detailReady, this, &MainWindow::onDetailReady);
 
-    refreshSortBox();
+    restoreToolbar();
     m_store.reload();
 }
 
@@ -238,10 +240,43 @@ void MainWindow::refreshSortBox() {
     m_sortBox->blockSignals(false);
 }
 
+void MainWindow::restoreToolbar() {
+    // Saved toolbar state, applied before the single startup load.
+    // Out-of-range values fall back to row 0 (fresh-start behavior).
+    AppSettings s = m_store.settings();
+    auto mode = (CatalogStore::Mode)qBound(0, s.browseMode, 3);
+    auto sort = (CatalogStore::Sort)qBound(0, s.sortOrder, 4);
+    m_store.setInitialView(mode, sort);
+    m_browseBox->blockSignals(true);
+    m_browseBox->setCurrentIndex((int)mode);
+    m_browseBox->blockSignals(false);
+    refreshSortBox();
+    QString want = "A–Z";
+    if (mode == CatalogStore::Books) {
+        static const char *k[] = {"Author", "A–Z", "Z–A", "Newest", "Oldest"};
+        want = k[(int)sort];
+    } else if (mode == CatalogStore::Series) {
+        static const char *k[] = {"Author", "A–Z", "Z–A"};
+        want = k[(int)sort <= 2 ? (int)sort : 0];
+    } else if (sort == CatalogStore::ZA) {
+        want = "Z–A";
+    }
+    m_sortBox->blockSignals(true);
+    int idx = m_sortBox->findText(want);
+    m_sortBox->setCurrentIndex(idx >= 0 ? idx : 0);
+    m_sortBox->blockSignals(false);
+    onViewMode(s.viewMode != "list");
+}
+
+QString MainWindow::currentView() const {
+    return m_gridBtn->isChecked() ? "grid" : "list";
+}
+
 void MainWindow::onBrowseChanged(int i) {
     m_koboActive = false;
     m_store.setMode((CatalogStore::Mode)i);
     refreshSortBox();
+    m_store.saveView(currentView());
 }
 
 void MainWindow::onSortChanged(int i) {
@@ -256,6 +291,7 @@ void MainWindow::onSortChanged(int i) {
     else s = CatalogStore::ByAuthor;
     Q_UNUSED(m);
     m_store.setSort(s);
+    m_store.saveView(currentView());
 }
 
 void MainWindow::onSearch() {
@@ -287,6 +323,7 @@ void MainWindow::onViewMode(bool grid) {
     m_gridBtn->setChecked(grid);
     m_listBtn->setChecked(!grid);
     m_stack->setCurrentWidget(grid ? (QWidget *)m_grid : (QWidget *)m_list);
+    m_store.saveView(currentView());
 }
 
 void MainWindow::onLibraryBack() {
@@ -454,6 +491,8 @@ void MainWindow::onAbout() {
 }
 
 void MainWindow::onOpenDataFolder() {
-    QString dir = qEnvironmentVariable("APPDATA") + "/com.jocala.Catalog";
-    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+    QString dir = QFileInfo(AppSettings::settingsPath()).absolutePath();
+    QDir().mkpath(dir);
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(dir)))
+        QMessageBox::warning(this, "Data Folder", "Could not open:\n" + dir);
 }

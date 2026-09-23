@@ -1,6 +1,8 @@
 #pragma once
 // App settings: same %APPDATA%/com.jocala.Catalog/settings.json the WPF
 // app uses (identical keys), so the Qt build migrates seamlessly.
+// BrowseMode/SortOrder/ViewMode are Qt-only additions for toolbar state;
+// unknown keys are ignored by JSON readers that don't know them.
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
@@ -29,6 +31,9 @@ struct AppSettings {
     QJsonObject koboPasswords; // ip -> ssh password
     bool koboHandoffPromptDone = false; // stacking-fix offer, asked once
     int theme = 0;           // 0 system, 1 light, 2 dark
+    int browseMode = 0;      // toolbar browse: 0 Books, 1 Author, 2 Series, 3 Tags
+    int sortOrder = 0;       // toolbar sort: CatalogStore::Sort enum value (0-4)
+    QString viewMode = "grid"; // toolbar view: "grid" | "list"
 
     QString smbPassword(const QString &host) const;
     void setSmbPassword(const QString &host, const QString &pw);

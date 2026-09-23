@@ -35,6 +35,18 @@ void CatalogStore::setSettings(const AppSettings &s) {
     m_settings = s;
 }
 
+void CatalogStore::setInitialView(Mode m, Sort s) {
+    m_mode = m;
+    m_sort = s;
+}
+
+void CatalogStore::saveView(const QString &viewMode) {
+    m_settings.browseMode = (int)m_mode;
+    m_settings.sortOrder = (int)m_sort;
+    m_settings.viewMode = viewMode;
+    AppSettings::save(m_settings);
+}
+
 void CatalogStore::reload(bool fresh) {
     exitSearch();
     m_drillKind.clear();

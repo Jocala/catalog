@@ -36,6 +36,9 @@ private slots:
         s.koboIps = {"192.168.1.74", "192.168.1.75"};
         s.setKoboPassword("192.168.1.74", "1234");
         s.theme = 2;
+        s.browseMode = 2;
+        s.sortOrder = 3;
+        s.viewMode = "list";
         QVERIFY(AppSettings::save(s));
         AppSettings back = AppSettings::load();
         QCOMPARE(back.librarySource, QString("smb"));
@@ -49,6 +52,18 @@ private slots:
         QCOMPARE(back.koboPassword("192.168.1.74"), QString("1234"));
         QVERIFY(back.koboPassword("10.0.0.9").isNull());
         QCOMPARE(back.theme, 2);
+        QCOMPARE(back.browseMode, 2);
+        QCOMPARE(back.sortOrder, 3);
+        QCOMPARE(back.viewMode, QString("list"));
+        // Out-of-range view state clamps back to fresh-start defaults.
+        back.browseMode = 9;
+        back.sortOrder = 9;
+        back.viewMode = "bogus";
+        QVERIFY(AppSettings::save(back));
+        AppSettings clamped = AppSettings::load();
+        QCOMPARE(clamped.browseMode, 3);
+        QCOMPARE(clamped.sortOrder, 4);
+        QCOMPARE(clamped.viewMode, QString("grid"));
         back.koboHandoffPromptDone = true;
         QVERIFY(AppSettings::save(back));
         QVERIFY(AppSettings::load().koboHandoffPromptDone);

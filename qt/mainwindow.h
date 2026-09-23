@@ -47,6 +47,8 @@ private slots:
 
 private:
     void refreshSortBox();
+    void restoreToolbar();
+    QString currentView() const;
     void openDetail(int row);
     void openKoboFor(const BookItem &book);
 
