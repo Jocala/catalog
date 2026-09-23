@@ -143,10 +143,12 @@ verify download URL(s) 200 with exact byte sizes.
   win10/mac). debian keypair placed 2026-09-22 for the Linux port.
 - Passwords live in device Settings only — never in this repo.
 
-## Currently staged (test site only, no prod push)
-- Catalog 1.0 production (2026-09-23): signed+notarized DMG, Inno EXE,
-  Linux TGZ — single product name, toolbar restore, update check.
-  Commit `d86c818` on debian (exe 15437259, dmg 40355051, tgz 12674406).
+## Currently live (jocala.com) + staged
+- Catalog 1.0 LIVE 2026-09-23: product page + Inno EXE (15437259) +
+  signed/notarized DMG (40355051) + Linux TGZ (12674406); root index
+  catalog card; `catalog/version.txt` + `catalog/changelog.txt`.
+  Prod backups in `prod:/tmp` (`index.html.bak-20260923145217` + catalog
+  version/changelog copies).
 - WPF 1.0 + Mac DMG 1.0 (Swift), committed `d214530` (superseded).
 - Stable revert point 2026-09-22: Qt + engine consolidated, all three
   platforms green, repo clean — the milestone commit below.
