@@ -5,7 +5,6 @@ Find a book fast, see its details, then read it on your Kobo: open a book
 already on the device, or sync a missing one over with one click.
 
 ![Library grid](https://www.jocala.com/catalog/images/catalog-grid.png)
-![Book detail](https://www.jocala.com/catalog/images/catalog-detail.png)
 
 ## Features
 
