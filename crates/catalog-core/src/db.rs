@@ -398,7 +398,11 @@ pub fn fetch_books(
     by_author: bool,
     by_date: bool,
 ) -> Result<Vec<CatalogBook>, CatalogDbError> {
-    let mut sql = "SELECT b.id, b.title, b.author_sort, b.path, b.has_cover FROM books b".to_string();
+    let mut sql = "SELECT b.id, b.title, b.author_sort, b.path, b.has_cover, b.series_index,
+                (SELECT s.name FROM books_series_link bsl JOIN series s ON s.id = bsl.series WHERE bsl.book = b.id LIMIT 1) AS series,
+                (SELECT group_concat(tg.name, ', ') FROM books_tags_link btl JOIN tags tg ON tg.id = btl.tag WHERE btl.book = b.id) AS tags
+                FROM books b"
+        .to_string();
     let mut args: Vec<String> = vec![];
     if !q.is_empty() {
         sql += " WHERE b.title LIKE ?1 OR b.author_sort LIKE ?2";
@@ -421,12 +425,21 @@ pub fn fetch_books(
             let author: String = col_string_or(row, 2, "?");
             let rel: String = col_string_or(row, 3, "");
             let has_cover: i64 = row.get(4).unwrap_or(0);
-            Ok((id, title, author, rel, has_cover != 0))
+            let series_index: f64 = row.get::<_, Option<f64>>(5).unwrap_or(None).unwrap_or(0.0);
+            let series: Option<String> = col_string(row, 6);
+            let tags_str: String = col_string_or(row, 7, "");
+            let tags: Vec<String> = if tags_str.is_empty() {
+                vec![]
+            } else {
+                tags_str.split(", ").map(str::to_string).collect()
+            };
+            Ok((id, title, author, rel, has_cover != 0, series, series_index as f32, tags))
         })
         .map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;
     let mut out = vec![];
     for r in rows {
-        let (id, title, author, rel, has_cover) = r.map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;
+        let (id, title, author, rel, has_cover, series, series_index, tags) =
+            r.map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;
         out.push(CatalogBook {
             id,
             title,
@@ -434,6 +447,9 @@ pub fn fetch_books(
             path: source.book_path(&rel),
             has_cover,
             cover_hash: None,
+            series,
+            series_index,
+            tags,
         });
     }
     Ok(out)
@@ -513,7 +529,9 @@ pub fn books_by_author(
     let sql = "SELECT b.id, b.title,
                (SELECT a.name FROM books_authors_link bal JOIN authors a ON bal.author = a.id WHERE bal.book = b.id LIMIT 1) AS author,
                (SELECT a.sort FROM books_authors_link bal JOIN authors a ON bal.author = a.id WHERE bal.book = b.id LIMIT 1) AS author_sort,
-               b.path, b.timestamp
+               b.path, b.timestamp, b.series_index,
+               (SELECT s.name FROM books_series_link bsl JOIN series s ON s.id = bsl.series WHERE bsl.book = b.id LIMIT 1) AS series,
+               (SELECT group_concat(tg.name, ', ') FROM books_tags_link btl JOIN tags tg ON tg.id = btl.tag WHERE btl.book = b.id) AS tags
                FROM books b JOIN books_authors_link bal ON b.id = bal.book
                WHERE bal.author = ?1 ORDER BY b.sort";
     author_books_query(db, source, sql, author_id)
@@ -527,7 +545,9 @@ pub fn books_by_series(
     let sql = "SELECT b.id, b.title,
                (SELECT a.name FROM books_authors_link bal JOIN authors a ON bal.author = a.id WHERE bal.book = b.id LIMIT 1) AS author,
                (SELECT a.sort FROM books_authors_link bal JOIN authors a ON bal.author = a.id WHERE bal.book = b.id LIMIT 1) AS author_sort,
-               b.path, b.timestamp
+               b.path, b.timestamp, b.series_index,
+               (SELECT s.name FROM books_series_link bsl JOIN series s ON s.id = bsl.series WHERE bsl.book = b.id LIMIT 1) AS series,
+               (SELECT group_concat(tg.name, ', ') FROM books_tags_link btl JOIN tags tg ON tg.id = btl.tag WHERE btl.book = b.id) AS tags
                FROM books b JOIN books_series_link bsl ON b.id = bsl.book
                WHERE bsl.series = ?1 ORDER BY b.series_index";
     author_books_query(db, source, sql, series_id)
@@ -543,6 +563,14 @@ fn author_books_query(
     let rows = stmt
         .query_map([id], |row| {
             let rel: String = col_string_or(row, 4, "");
+            let series_index: f64 = row.get::<_, Option<f64>>(6).unwrap_or(None).unwrap_or(0.0);
+            let series: Option<String> = col_string(row, 7);
+            let tags_str: String = col_string_or(row, 8, "");
+            let tags: Vec<String> = if tags_str.is_empty() {
+                vec![]
+            } else {
+                tags_str.split(", ").map(str::to_string).collect()
+            };
             Ok(AuthorBook {
                 id: row.get(0)?,
                 title: row.get(1)?,
@@ -552,6 +580,9 @@ fn author_books_query(
                 timestamp: col_string_or(row, 5, ""),
                 root_folder: String::new(),
                 author_sort: col_string_or(row, 3, ""),
+                series,
+                series_index: series_index as f32,
+                tags,
             })
         })
         .map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;
@@ -680,8 +711,19 @@ pub fn search_books(
     } else {
         format!("WHERE {}", conditions.join(" AND "))
     };
+    // Series-scoped search fills the grid with one series: order by
+    // index (like the series-tile drill), not title sort.
+    let order = if p.series.is_empty() {
+        format!("b.sort {}", if p.sort_descending { "DESC" } else { "ASC" })
+    } else {
+        format!(
+            "s.name {}, b.series_index {}",
+            if p.sort_descending { "DESC" } else { "ASC" },
+            if p.sort_descending { "DESC" } else { "ASC" }
+        )
+    };
     let sql = format!(
-        "SELECT DISTINCT b.id, b.title, a.name, b.path, s.name,
+        "SELECT DISTINCT b.id, b.title, a.name, b.path, s.name, b.series_index,
                 (SELECT GROUP_CONCAT(t2.name, ', ') FROM books_tags_link btl2 JOIN tags t2 ON t2.id = btl2.tag WHERE btl2.book = b.id) AS tags,
                 a.sort AS author_sort
          FROM books b
@@ -695,8 +737,7 @@ pub fn search_books(
          LEFT JOIN publishers pub ON pub.id = bpl.publisher
          LEFT JOIN comments c ON b.id = c.book
          {where_clause}
-         ORDER BY b.sort {}",
-        if p.sort_descending { "DESC" } else { "ASC" }
+         ORDER BY {order}"
     );
     let mut stmt = db.prepare(&sql).map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;
     let params: Vec<&dyn rusqlite::ToSql> =
@@ -704,20 +745,22 @@ pub fn search_books(
     let rows = stmt
         .query_map(params.as_slice(), |row| {
             let rel: String = col_string_or(row, 3, "");
-            let tags_str: String = col_string_or(row, 5, "");
+            let series_index: f64 = row.get::<_, Option<f64>>(5).unwrap_or(None).unwrap_or(0.0);
+            let tags_str: String = col_string_or(row, 6, "");
             Ok(SearchedBook {
                 id: row.get(0)?,
                 title: row.get(1)?,
                 author: col_string_or(row, 2, "Unknown"),
                 path: source.book_path(&rel),
                 series: col_string(row, 4),
+                series_index: series_index as f32,
                 tags: if tags_str.is_empty() {
                     vec![]
                 } else {
                     tags_str.split(", ").map(str::to_string).collect()
                 },
                 cover_hash: String::new(),
-                author_sort: col_string_or(row, 6, ""),
+                author_sort: col_string_or(row, 7, ""),
             })
         })
         .map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;

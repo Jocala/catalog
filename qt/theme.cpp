@@ -28,6 +28,13 @@ void applyTheme(int preference) {
         dark.setColor(QPalette::Link, QColor(42, 130, 218));
         dark.setColor(QPalette::Highlight, QColor(42, 130, 218));
         dark.setColor(QPalette::HighlightedText, Qt::white);
+        // PlaceholderText is unset by default in a hand-built palette —
+        // without it every QLineEdit hint (Kobo IP, SMB fields, …)
+        // paints nothing in dark mode.
+        dark.setColor(QPalette::PlaceholderText, QColor(150, 150, 150));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+        dark.setColor(QPalette::Accent, QColor(42, 130, 218));
+#endif
         QApplication::setPalette(dark);
     } else {
         QApplication::setPalette(QApplication::style()->standardPalette());

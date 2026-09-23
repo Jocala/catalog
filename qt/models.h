@@ -13,6 +13,9 @@ struct BookItem {
     bool hasCover = false;
     QString authorSort;
     QString timestamp;
+    QString series;
+    double seriesIndex = 0;
+    QString tags;
     static BookItem fromJson(const QJsonObject &o);
 };
 

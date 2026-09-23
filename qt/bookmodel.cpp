@@ -13,6 +13,9 @@ void BookModel::setBooks(const QList<BookItem> &books) {
         r.title = b.title;
         r.sub = b.author;
         r.coverPath = b.path;
+        r.series = b.series;
+        r.seriesIndex = b.seriesIndex;
+        r.tags = b.tags;
         m_rows.append(r);
     }
     endResetModel();
@@ -65,6 +68,9 @@ BookItem BookModel::bookAt(int row) const {
     b.title = m_rows[row].title;
     b.author = m_rows[row].sub;
     b.path = m_rows[row].coverPath;
+    b.series = m_rows[row].series;
+    b.seriesIndex = m_rows[row].seriesIndex;
+    b.tags = m_rows[row].tags;
     return b;
 }
 
@@ -91,6 +97,12 @@ QVariant BookModel::data(const QModelIndex &index, int role) const {
         return r.coverPath;
     case IdRole:
         return r.id;
+    case SeriesRole:
+        return r.series;
+    case SeriesIndexRole:
+        return r.seriesIndex;
+    case TagsRole:
+        return r.tags;
     case CoverRole: {
         auto it = m_covers.find(r.coverPath);
         if (it != m_covers.end())

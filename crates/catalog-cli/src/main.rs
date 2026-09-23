@@ -242,8 +242,9 @@ async fn cmd_library_list(
                         title: b.title,
                         author: b.author,
                         path: b.path,
-                        series: None,
-                        tags: vec![],
+                        series: b.series,
+                        series_index: b.series_index,
+                        tags: b.tags,
                         cover_hash: String::new(),
                         author_sort: String::new(),
                     })

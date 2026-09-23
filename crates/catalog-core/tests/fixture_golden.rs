@@ -42,6 +42,9 @@ fn golden_fetch_books_paths() {
     assert_eq!(books.len(), 4);
     assert_eq!(books[0].author, "Austen, Jane");
     assert!(books[0].path.ends_with("Jane Austen/Emma (1)"));
+    let emma = books.iter().find(|b| b.title == "Emma").unwrap();
+    assert_eq!(emma.series.as_deref(), Some("Classics"));
+    assert_eq!(emma.tags, vec!["Fiction".to_string(), "Romance".to_string()]);
 }
 
 #[test]
@@ -77,6 +80,10 @@ fn golden_tags_series_authors() {
     assert_eq!(authors.len(), 2);
     let austen = authors.iter().find(|a| a.name == "Jane Austen").unwrap();
     assert_eq!(books_by_author(&db, &source, austen.id).unwrap().len(), 2);
+    let austen_books = books_by_author(&db, &source, austen.id).unwrap();
+    let emma_drill = austen_books.iter().find(|b| b.title == "Emma").unwrap();
+    assert_eq!(emma_drill.series.as_deref(), Some("Classics"));
+    assert!(emma_drill.tags.contains(&"Fiction".to_string()));
 }
 
 #[test]
@@ -88,6 +95,37 @@ fn golden_detail_strips_html() {
     assert_eq!(d.comments.as_deref(), Some("Highbury matchmaking & mischief."));
     assert_eq!(d.isbn.as_deref(), Some("9780141439587"));
     assert_eq!(d.publisher.as_deref(), Some("Penguin"));
+}
+
+#[test]
+fn golden_series_search_orders_by_index() {
+    let db = fixture_db();
+    let source = fixture_source();
+    // Title sorts first alphabetically but is last in the series: index
+    // order must win over title sort for a series-scoped search.
+    db.execute(
+        "INSERT INTO books VALUES(5,'Aardvark','Doyle, Arthur Conan','Arthur Conan Doyle/Aardvark (5)',0,'Aardvark','2023-06-03','1903-01-01',9.0,'2023-06-03')",
+        [],
+    )
+    .unwrap();
+    db.execute("INSERT INTO books_authors_link VALUES(5,2)", [])
+        .unwrap();
+    db.execute("INSERT INTO books_series_link VALUES(5,2)", [])
+        .unwrap();
+    let p = SearchParams {
+        series: "Holmes".to_string(),
+        ..Default::default()
+    };
+    let found = search_books(&db, &source, &p).unwrap();
+    let titles: Vec<&str> = found.iter().map(|b| b.title.as_str()).collect();
+    assert_eq!(
+        titles,
+        vec![
+            "The Hound of the Baskervilles",
+            "A Study in Scarlet",
+            "Aardvark"
+        ]
+    );
 }
 
 #[test]

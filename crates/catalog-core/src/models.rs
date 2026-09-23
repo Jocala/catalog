@@ -26,6 +26,12 @@ pub struct AuthorBook {
     pub timestamp: String,
     pub root_folder: String,
     pub author_sort: String,
+    #[serde(default)]
+    pub series: Option<String>,
+    #[serde(default)]
+    pub series_index: f32,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -76,6 +82,8 @@ pub struct SearchedBook {
     pub author: String,
     pub path: String,
     pub series: Option<String>,
+    #[serde(default)]
+    pub series_index: f32,
     pub tags: Vec<String>,
     pub cover_hash: String,
     pub author_sort: String,
@@ -90,6 +98,12 @@ pub struct CatalogBook {
     pub path: String,
     pub has_cover: bool,
     pub cover_hash: Option<String>,
+    #[serde(default)]
+    pub series: Option<String>,
+    #[serde(default)]
+    pub series_index: f32,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 // SearchResult lives in SearchFormSheet.swift.

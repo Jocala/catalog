@@ -12,5 +12,5 @@ public:
                const QModelIndex &idx) const override;
     QSize sizeHint(const QStyleOptionViewItem &opt,
                    const QModelIndex &idx) const override;
-    static const int RowHeight = 136;
+    static const int RowHeight = 196;
 };

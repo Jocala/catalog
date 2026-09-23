@@ -34,13 +34,29 @@ private slots:
         QCOMPARE(full.height(), 220);
         QPixmap small = m.data(m.index(0), Qt::DecorationRole).value<QPixmap>();
         QVERIFY(!small.isNull());
-        QCOMPARE(small.height(), 120);
+        QCOMPARE(small.height(), 180);
     }
     void listRowMetrics() {
         ListDelegate d;
         QStyleOptionViewItem opt;
-        opt.rect = QRect(0, 0, 300, 136);
+        opt.rect = QRect(0, 0, 300, 196);
         QCOMPARE(d.sizeHint(opt, QModelIndex()).height(), ListDelegate::RowHeight);
+    }
+    void metaRoles() {
+        BookModel m;
+        BookItem b;
+        b.id = 1;
+        b.title = "Emma";
+        b.author = "Jane Austen";
+        b.path = "p";
+        b.series = "Classics";
+        b.seriesIndex = 1;
+        b.tags = "Fiction, Romance";
+        m.setBooks({b});
+        QCOMPARE(m.data(m.index(0), BookModel::SeriesRole).toString(), QString("Classics"));
+        QCOMPARE(m.data(m.index(0), BookModel::SeriesIndexRole).toDouble(), 1.0);
+        QCOMPARE(m.data(m.index(0), BookModel::TagsRole).toString(),
+                 QString("Fiction, Romance"));
     }
 };
 

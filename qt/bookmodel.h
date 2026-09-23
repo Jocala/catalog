@@ -9,7 +9,7 @@
 class BookModel : public QAbstractListModel {
     Q_OBJECT
 public:
-    enum Roles { TitleRole = Qt::UserRole + 1, AuthorRole, PathRole, CoverRole, IdRole };
+    enum Roles { TitleRole = Qt::UserRole + 1, AuthorRole, PathRole, CoverRole, IdRole, SeriesRole, SeriesIndexRole, TagsRole };
 
     explicit BookModel(QObject *parent = nullptr);
 
@@ -33,11 +33,14 @@ private:
         QString title;
         QString sub;
         QString coverPath;
+        QString series;
+        double seriesIndex = 0;
+        QString tags;
     };
     QList<Row> m_rows;
     QHash<QString, QPixmap> m_covers;
     // List-mode thumbnails: row-height versions converted once alongside
     // the full pixmaps (same batch, negligible memory).
     QHash<QString, QPixmap> m_coversSmall;
-    static const int ListThumbHeight = 120;
+    static const int ListThumbHeight = 180;
 };

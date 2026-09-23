@@ -76,6 +76,11 @@ void SearchDialog::loadLists() {
                 w->deleteLater();
                 m_series->addItems(r.first);
                 m_tags->addItems(r.second);
+                // Leave both blank: without this the combos default to
+                // index 0 and the dialog looks pre-filled with the first
+                // series/tag in the library.
+                m_series->setCurrentIndex(-1);
+                m_tags->setCurrentIndex(-1);
             });
     w->setFuture(QtConcurrent::run([cfg]() {
         QPair<QStringList, QStringList> out;

@@ -27,8 +27,12 @@
 
 TileDelegate::TileDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
 
+static constexpr int kTileW = 200;
+static constexpr int kTileH = 300;
+static constexpr int kColumns = 4;
+
 QSize TileDelegate::sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const {
-    return QSize(200, 300);
+    return QSize(kTileW, kTileH);
 }
 
 void TileDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
@@ -74,7 +78,14 @@ void TileDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     setWindowTitle("Jocala Catalog");
-    resize(912, 818);
+    // Fixed width: hug exactly kColumns gallery tiles (no 3- or 5-across).
+    // Height stays resizable; the reserve for a vertical scrollbar keeps
+    // 4-across stable whether the bar is shown or not.
+    const int spacing = 12;
+    const int sb = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
+    const int gridW = kColumns * kTileW + (kColumns - 1) * spacing + sb + 8;
+    resize(gridW, 818);
+    setFixedWidth(gridW);
 
     QMenu *file = menuBar()->addMenu("&File");
     QAction *newWin = file->addAction("&New Window", [this]() {
@@ -129,7 +140,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_grid->setViewMode(QListView::IconMode);
     m_grid->setResizeMode(QListView::Adjust);
     m_grid->setMovement(QListView::Static);
-    m_grid->setSpacing(12);
+    m_grid->setSpacing(spacing);
+    m_grid->setGridSize(QSize(kTileW, kTileH));
+    // Minimum two grid rows high, never less (window can't collapse shut).
+    const int minGridH = 2 * kTileH + spacing;
+    m_grid->setMinimumHeight(minGridH);
+    m_stack->setMinimumHeight(minGridH);
+    m_grid->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_grid->setUniformItemSizes(true);
     m_grid->setModel(m_store.model());
     m_grid->setItemDelegate(new TileDelegate(this));
@@ -141,7 +158,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_list = new QListView(this);
     m_list->setModel(m_store.model());
     m_list->setUniformItemSizes(true);
-    m_list->setIconSize(QSize(36, 40));
+    m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_list->setIconSize(QSize(54, 60));
     m_list->setItemDelegate(new ListDelegate(this));
     m_list->viewport()->setCursor(Qt::PointingHandCursor);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -183,6 +201,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     // and can never wrap or grow the status bar.
     m_statusLabel->setWordWrap(false);
     statusBar()->addPermanentWidget(m_statusLabel, 1);
+    // Window floor follows the two-row stack minimum plus chrome
+    // (menu/toolbar/status) so dragging shut stops at two rows.
+    setMinimumHeight(minimumSizeHint().height());
 
     connect(&m_store, &CatalogStore::countsChanged, this, &MainWindow::onCounts);
     connect(&m_store, &CatalogStore::statusChanged, this, &MainWindow::onStatus);

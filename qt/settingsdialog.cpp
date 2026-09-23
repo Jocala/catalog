@@ -200,9 +200,9 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
         });
         w->setFuture(QtConcurrent::run([ip]() { return KoboJob::handoffEnsure(ip); }));
     });
-    addRow->addWidget(m_newKobo);
     addRow->addWidget(addBtn);
     addRow->addWidget(fixBtn);
+    addRow->addWidget(m_newKobo);
     addRow->addStretch();
     koboLay->addLayout(addRow);
     QLabel *koboHint = new QLabel(
@@ -329,8 +329,16 @@ void SettingsDialog::onShowPass(bool show) {
 
 void SettingsDialog::onKoboAdd() {
     QString ip = m_newKobo->text().trimmed();
-    if (ip.isEmpty() || m_settings.koboIps.contains(ip))
+    if (ip.isEmpty()) {
+        m_koboStatus->setStyleSheet("color: gray");
+        m_koboStatus->setText("Enter a Kobo IP address first.");
         return;
+    }
+    if (m_settings.koboIps.contains(ip)) {
+        m_koboStatus->setStyleSheet("color: gray");
+        m_koboStatus->setText(QString("%1 is already listed.").arg(ip));
+        return;
+    }
     m_settings.koboIps.append(ip);
     if (m_settings.koboIp.trimmed().isEmpty()) {
         // First/only IP becomes the default (WPF parity) — a single

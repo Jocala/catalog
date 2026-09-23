@@ -1,6 +1,8 @@
 // Settings JSON round-trips the exact WPF schema keys.
 // APPDATA is redirected to a temp dir: never touch real settings.
 #include "../settings.h"
+#include "../theme.h"
+#include <QApplication>
 #include <QDir>
 #include <QJsonDocument>
 #include <QTemporaryDir>
@@ -104,6 +106,15 @@ private slots:
         QVERIFY(!p.startsWith("/com.jocala.Catalog"));
         QVERIFY(QDir(p).isAbsolute());
         QVERIFY(p.endsWith("/settings.json"));
+    }
+
+    void darkPalettePaintsPlaceholders() {
+        // Regression: the hand-built dark palette once omitted
+        // PlaceholderText, so every QLineEdit hint (Kobo IP, SMB
+        // fields, …) painted nothing in dark mode.
+        applyTheme(2);
+        QVERIFY(QApplication::palette().color(QPalette::PlaceholderText).isValid());
+        applyTheme(1);
     }
 };
 

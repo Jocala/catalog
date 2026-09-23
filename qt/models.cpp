@@ -15,6 +15,18 @@ BookItem BookItem::fromJson(const QJsonObject &o) {
     b.hasCover = o.value("has_cover").toBool(!b.coverHash.isEmpty());
     b.authorSort = str(o, "author_sort");
     b.timestamp = str(o, "timestamp");
+    b.series = str(o, "series");
+    b.seriesIndex = o.value("series_index").toDouble(0);
+    QJsonValue tags = o.value("tags");
+    if (tags.isArray()) {
+        QStringList parts;
+        for (const QJsonValue &t : tags.toArray())
+            if (!t.toString().isEmpty())
+                parts << t.toString();
+        b.tags = parts.join(", ");
+    } else {
+        b.tags = tags.toString();
+    }
     return b;
 }
 

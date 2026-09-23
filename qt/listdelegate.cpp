@@ -16,7 +16,7 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
         p->fillRect(opt.rect, opt.palette.alternateBase());
 
     const int margin = 8;
-    const int thumbBox = 120;
+    const int thumbBox = 180;
     int textX = opt.rect.x() + margin + thumbBox + margin;
     int textW = opt.rect.right() - textX - margin;
 
@@ -31,6 +31,9 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
 
     QString title = idx.data(BookModel::TitleRole).toString();
     QString sub = idx.data(BookModel::AuthorRole).toString();
+    QString tags = idx.data(BookModel::TagsRole).toString();
+    QString series = idx.data(BookModel::SeriesRole).toString();
+    double seriesIndex = idx.data(BookModel::SeriesIndexRole).toDouble();
 
     QFont titleFont = p->font();
     titleFont.setWeight(QFont::DemiBold);
@@ -38,7 +41,7 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
     p->setPen(opt.palette.text().color());
     QFontMetrics tfm(titleFont);
     QString titleElided = tfm.elidedText(title, Qt::ElideRight, textW);
-    p->drawText(textX, opt.rect.y() + 48, textW, 22,
+    p->drawText(textX, opt.rect.y() + 78, textW, 22,
                 Qt::AlignLeft | Qt::AlignVCenter, titleElided);
 
     QFont subFont = p->font();
@@ -47,7 +50,18 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
     p->setPen(Qt::gray);
     QFontMetrics sfm(subFont);
     QString subElided = sfm.elidedText(sub, Qt::ElideRight, textW);
-    p->drawText(textX, opt.rect.y() + 70, textW, 18,
+    p->drawText(textX, opt.rect.y() + 100, textW, 18,
                 Qt::AlignLeft | Qt::AlignVCenter, subElided);
+    if (!tags.isEmpty()) {
+        QString tagsElided = sfm.elidedText(tags, Qt::ElideRight, textW);
+        p->drawText(textX, opt.rect.y() + 122, textW, 18,
+                    Qt::AlignLeft | Qt::AlignVCenter, tagsElided);
+    }
+    if (!series.isEmpty()) {
+        QString line = QString("%1 #%2").arg(series).arg(seriesIndex);
+        QString lineElided = sfm.elidedText(line, Qt::ElideRight, textW);
+        p->drawText(textX, opt.rect.y() + 140, textW, 18,
+                    Qt::AlignLeft | Qt::AlignVCenter, lineElided);
+    }
     p->restore();
 }
