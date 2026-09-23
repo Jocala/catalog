@@ -13,7 +13,7 @@
 #include <QVBoxLayout>
 
 namespace {
-const char *kVersionUrl = "https://www.jocala.com/cversion.txt";
+const char *kVersionUrl = "https://www.jocala.com/catalog/version.txt";
 const char *kCatalogPage = "https://www.jocala.com/catalog/";
 const char *kChangelogUrl = "https://www.jocala.com/catalog/changelog.txt";
 }

@@ -27,7 +27,7 @@ below except where a live procedure depends on them.
   disk + byte-capped memory caches, silent fresh start, single Kobo
   is default, golden default star, no click outline, aspect-fit
   covers, rich list rows (`ListDelegate`). Update check at startup
-  (`updatecheck.cpp` vs `version.h`, `cversion.txt` on jocala.com;
+  (`updatecheck.cpp` vs `version.h`, `catalog/version.txt` on jocala.com;
   opt-out `CheckForUpdates` in Settings; manual check in About;
   changelog at `catalog/changelog.txt`). Assets mirrored in-tree
   (`assets/`: `help.html`, `donatel.png`, `appicon.ico`,
@@ -96,7 +96,7 @@ links, and size labels all derive from it. `qt/version.h`
 (`#VERSION`) must all carry it. No production
 (`jocala.com`) push — staging on debian only; going live is a
 separate future step. Two live-site files ride each version bump
-(both already live, update on change): `catalog/cversion.txt`
+(both already live, update on change): `catalog/version.txt`
 (bare version string — drives the in-app update check) and
 `catalog/changelog.txt` (offered from the update dialog + Help menu).
 

@@ -12,7 +12,7 @@ class UpdateChecker : public QObject {
 public:
     explicit UpdateChecker(QObject *parent = nullptr);
 
-    // Fetch cversion.txt and offer the update when newer. quiet=true
+    // Fetch catalog/version.txt and offer the update when newer. quiet=true
     // (startup) stays silent unless an update is actually ready; manual
     // checks report errors and the up-to-date state too.
     void check(QWidget *parentWidget, bool quiet);
