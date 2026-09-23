@@ -26,7 +26,10 @@ below except where a live procedure depends on them.
   about/help, theme, status; demand-coalesced covers (no queues),
   disk + byte-capped memory caches, silent fresh start, single Kobo
   is default, golden default star, no click outline, aspect-fit
-  covers, rich list rows (`ListDelegate`). Assets mirrored in-tree
+  covers, rich list rows (`ListDelegate`). Update check at startup
+  (`updatecheck.cpp` vs `version.h`, `cversion.txt` on jocala.com;
+  opt-out `CheckForUpdates` in Settings; manual check in About;
+  changelog at `catalog/changelog.txt`). Assets mirrored in-tree
   (`assets/`: `help.html`, `donatel.png`, `appicon.ico`,
   `AppIcon.icns` — canonical). Per-platform build scripts beside it
   (`build-catalog-{windows.ps1,macos.sh,linux.sh}` for build +
@@ -56,9 +59,12 @@ below except where a live procedure depends on them.
 - FFI metadata cache: 60s TTL process-wide, `"fresh":"1"` bypasses (Reload semantics). Stale-read window is by design.
 - russh is pinned at 0.52: 0.63 was refused by the resolver against the smb RC crypto. Do not bump without re-resolving.
 - Windows native: Rust 1.98.1 MSVC on win10; Qt build + `ctest` 4/4
-  green 2026-09-22 via `build-catalog-windows.ps1`; live parity user-driven.
-- Linux native (debian): Rust 1.98.1, `libcatalog_ffi.a` 110MB, Qt 6.8.2 system libs, `JocalaCatalog` 46MB linked, `ctest` 4/4 (offscreen). CMakeLists carries the Linux link set (Threads/DL/m + bz2 + lzma for the engine's zip backend).
-- macOS native (this Mac arm64): Rust 1.98.1, universal `libcatalog_ffi.a` 158MB (lipo of both arches), static Qt 6.11.1, universal `JocalaCatalog.app` 85MB, `ctest` 4/4. Build script: `qt/build-catalog-macos.sh`. Unsigned local run only so far — SMB proof + sign/notarize still open.
+  green 2026-09-22 via `build-catalog-windows.ps1` (5th test lands on
+  next release build); live parity user-driven. Static OpenSSL stanza
+  added for Qt Network (`C:/openssl-static`, adblink pattern) —
+  unverified until that build.
+- Linux native (debian): Rust 1.98.1, `libcatalog_ffi.a` 110MB, Qt 6.8.2 system libs, `JocalaCatalog` 46MB linked, `ctest` 4/4 (offscreen; 5th test lands on next release build). CMakeLists carries the Linux link set (Threads/DL/m + bz2 + lzma for the engine's zip backend).
+- macOS native (this Mac arm64): Rust 1.98.1, universal `libcatalog_ffi.a` 158MB (lipo of both arches), static Qt 6.11.1, universal `JocalaCatalog.app` 99MB, `ctest` 5/5. Build script: `qt/build-catalog-macos.sh`. Unsigned local run only so far — SMB proof + sign/notarize still open.
 - Rules: `catalog-core` takes **no GUI dependencies**, ever; `catalog-ffi` fns are all **blocking** (tokio runtime inside — shells call off UI thread); no `unwrap()` on new library paths.
 - Verify: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`.
 
@@ -85,9 +91,14 @@ below except where a live procedure depends on them.
 
 Single `VERSION` parameter (currently `1.0`): installer filenames
 `jocala-catalog.$VERSION.exe` (+ future Mac/Linux artifacts), page
-links, and size labels all derive from it. No production
+links, and size labels all derive from it. `qt/version.h`
+(`kCatalogVersion`), CMake `project(VERSION)`, and `catalog.iss.in`
+(`#VERSION`) must all carry it. No production
 (`jocala.com`) push — staging on debian only; going live is a
-separate future step.
+separate future step. Two live-site files ride each version bump
+(both already live, update on change): `catalog/cversion.txt`
+(bare version string — drives the in-app update check) and
+`catalog/changelog.txt` (offered from the update dialog + Help menu).
 
 Per-platform builds (independent — different machines, no shared
 state — run in any order, or parallel where noted):

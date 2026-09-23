@@ -100,6 +100,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     file->addAction("E&xit", qApp, &QApplication::quit);
     QMenu *help = menuBar()->addMenu("&Help");
     help->addAction("Jocala Catalog &Help", this, &MainWindow::onHelp);
+    help->addAction("View &Changelog", this, &MainWindow::onChangelog);
     help->addSeparator();
     help->addAction("&About Jocala Catalog", this, &MainWindow::onAbout);
 
@@ -217,6 +218,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
     restoreToolbar();
     m_store.reload();
+    if (m_store.settings().checkForUpdates)
+        m_updater.check(this, true); // startup: silent unless an update is ready
 }
 
 void MainWindow::refreshSortBox() {
@@ -488,6 +491,10 @@ void MainWindow::onHelp() {
 void MainWindow::onAbout() {
     AboutDialog dlg(this);
     dlg.exec();
+}
+
+void MainWindow::onChangelog() {
+    QDesktopServices::openUrl(QUrl("https://www.jocala.com/catalog/changelog.txt"));
 }
 
 void MainWindow::onOpenDataFolder() {

@@ -1,4 +1,6 @@
 #include "aboutdialog.h"
+#include "updatecheck.h"
+#include "version.h"
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QLabel>
@@ -13,7 +15,7 @@ const char *kPayPal =
 
 AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle("About Jocala Catalog");
-    setFixedSize(380, 300);
+    setFixedSize(380, 340);
     QVBoxLayout *top = new QVBoxLayout(this);
     top->setContentsMargins(20, 20, 20, 20);
     QLabel *name = new QLabel("Jocala Catalog", this);
@@ -23,7 +25,7 @@ AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent) {
     f.setBold(true);
     name->setFont(f);
     top->addWidget(name);
-    QLabel *ver = new QLabel("Version 1.0", this);
+    QLabel *ver = new QLabel("Version " + kCatalogVersion, this);
     ver->setAlignment(Qt::AlignCenter);
     ver->setStyleSheet("color: gray");
     top->addWidget(ver);
@@ -45,6 +47,13 @@ AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent) {
         QDesktopServices::openUrl(QUrl(kPayPal));
     });
     top->addWidget(donate, 0, Qt::AlignCenter);
+    QPushButton *updates = new QPushButton("Check for Updates", this);
+    connect(updates, &QPushButton::clicked, this, [this]() {
+        // Heap + parented: the async reply must outlive this lambda.
+        auto *checker = new UpdateChecker(this);
+        checker->check(this, false);
+    });
+    top->addWidget(updates, 0, Qt::AlignCenter);
     QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     connect(buttons, &QDialogButtonBox::rejected, this, &AboutDialog::accept);
     top->addWidget(buttons, 0, Qt::AlignCenter);

@@ -34,6 +34,7 @@ struct AppSettings {
     int browseMode = 0;      // toolbar browse: 0 Books, 1 Author, 2 Series, 3 Tags
     int sortOrder = 0;       // toolbar sort: CatalogStore::Sort enum value (0-4)
     QString viewMode = "grid"; // toolbar view: "grid" | "list"
+    bool checkForUpdates = true; // startup update check (opt-out in Settings)
 
     QString smbPassword(const QString &host) const;
     void setSmbPassword(const QString &host, const QString &pw);

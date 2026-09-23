@@ -1,6 +1,7 @@
 #pragma once
 // Main window: toolbar, gallery (grid/list), bottom status bar.
 #include "catalogstore.h"
+#include "updatecheck.h"
 #include <QComboBox>
 #include <QLabel>
 #include <QListView>
@@ -42,6 +43,7 @@ private slots:
     void onDetailReady(const DetailItem &detail);
     void onHelp();
     void onAbout();
+    void onChangelog();
     void onOpenDataFolder();
     void showContextMenu(const QPoint &pos);
 
@@ -53,6 +55,7 @@ private:
     void openKoboFor(const BookItem &book);
 
     CatalogStore m_store;
+    UpdateChecker m_updater;
     QComboBox *m_browseBox;
     QComboBox *m_sortBox;
     QPushButton *m_libraryBtn;

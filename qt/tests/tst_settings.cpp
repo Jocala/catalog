@@ -55,6 +55,11 @@ private slots:
         QCOMPARE(back.browseMode, 2);
         QCOMPARE(back.sortOrder, 3);
         QCOMPARE(back.viewMode, QString("list"));
+        // Update opt-out persists; fresh installs default to checked.
+        QVERIFY(AppSettings().checkForUpdates);
+        s.checkForUpdates = false;
+        QVERIFY(AppSettings::save(s));
+        QVERIFY(!AppSettings::load().checkForUpdates);
         // Out-of-range view state clamps back to fresh-start defaults.
         back.browseMode = 9;
         back.sortOrder = 9;

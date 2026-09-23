@@ -5,6 +5,7 @@
 #include <QSet>
 
 class QComboBox;
+class QCheckBox;
 class QLineEdit;
 class QRadioButton;
 class QVBoxLayout;
@@ -48,5 +49,6 @@ private:
     QLineEdit *m_newKobo;
     QLabel *m_koboStatus;
     QComboBox *m_theme;
+    QCheckBox *m_updateCheck;
     QSet<QString> m_revealed;
 };

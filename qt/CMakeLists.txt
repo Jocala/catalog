@@ -15,6 +15,10 @@ endif()
 if(WIN32)
     set(CMAKE_WIN32_EXECUTABLE ON)
     set(CMAKE_PREFIX_PATH "C:/Qt/Qt.6.11.1-static" CACHE PATH "")
+    # Static OpenSSL for Qt Network's TLS backend (adblink pattern;
+    # C:/openssl-static lives on win10).
+    set(OPENSSL_ROOT_DIR "C:/openssl-static" CACHE PATH "")
+    set(OPENSSL_USE_STATIC_LIBS ON CACHE BOOL "")
 endif()
 
 if(APPLE)
@@ -22,9 +26,13 @@ if(APPLE)
     set(CMAKE_PREFIX_PATH "/Users/jeff/Qt/Qt.6.11.1-static" CACHE PATH "")
     set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "")
     set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "")
+    # Static universal OpenSSL for Qt Network's TLS backend: Homebrew's
+    # libssl is arm64-only and breaks the x86_64 half (same as adblink).
+    set(OPENSSL_ROOT_DIR "/Users/jeff/openssl/openssl-universal" CACHE PATH "")
+    set(OPENSSL_USE_STATIC_LIBS ON CACHE BOOL "")
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent Network)
 
 # Static Rust FFI lib. Per-platform recipe (pass -DFFI_LIB=... at
 # configure when it differs):
@@ -51,6 +59,7 @@ set(SOURCES
     kobojob.cpp
     theme.cpp
     listdelegate.cpp
+    updatecheck.cpp
 )
 if(WIN32)
     list(APPEND SOURCES catalog.rc)
@@ -73,6 +82,8 @@ set(HEADERS
     kobojob.h
     theme.h
     listdelegate.h
+    updatecheck.h
+    version.h
 )
 
 if(APPLE)
@@ -106,7 +117,7 @@ endif()
 target_include_directories(catalog PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(catalog PRIVATE
-    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent Qt6::Network
     ${FFI_LIB}
 )
 if(WIN32)

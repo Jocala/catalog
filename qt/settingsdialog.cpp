@@ -228,6 +228,12 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
             this, &SettingsDialog::onThemeChanged);
     genLay->addWidget(m_theme);
     genLay->addStretch();
+    m_updateCheck = new QCheckBox("Check for updates at startup", genGroup);
+    m_updateCheck->setChecked(m_settings.checkForUpdates);
+    connect(m_updateCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_settings.checkForUpdates = on;
+    });
+    genLay->addWidget(m_updateCheck);
     top->addWidget(genGroup);
     top->addStretch();
     scroll->setWidget(body);

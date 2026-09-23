@@ -142,6 +142,7 @@ AppSettings AppSettings::load() {
     s.viewMode = o.value("ViewMode").toString("grid");
     if (s.viewMode != "grid" && s.viewMode != "list")
         s.viewMode = "grid";
+    s.checkForUpdates = o.value("CheckForUpdates").toBool(true);
     return s;
 }
 
@@ -180,6 +181,7 @@ bool AppSettings::save(const AppSettings &s) {
     o.insert("BrowseMode", s.browseMode);
     o.insert("SortOrder", s.sortOrder);
     o.insert("ViewMode", s.viewMode);
+    o.insert("CheckForUpdates", s.checkForUpdates);
     QFile f(settingsPath());
     QDir().mkpath(QFileInfo(f).absolutePath());
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
