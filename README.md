@@ -1,47 +1,53 @@
-# Jocala Catalog
+# Jocala Catalog — Calibre Library Browser
 
-Qt Widgets library manager over the Rust catalog engine — one tree,
-three targets (Windows, Linux, macOS). Ebook library browser for a
-Calibre library (local folder or SMB share): gallery + detail,
-browse/search, settings, Kobo sync/open over WiFi.
+Browse your Calibre ebook library from your Windows, macOS, or Linux PC.
+Find a book fast, see its details, then read it on your Kobo: open a book
+already on the device, or sync a missing one over with one click.
 
-## Layout
+![Library grid](https://www.jocala.com/catalog/images/catalog-grid.png)
+![Book detail](https://www.jocala.com/catalog/images/catalog-detail.png)
 
-- `qt/` — the Qt shell (gallery, detail, settings, search,
-  about/help, theme, status). Per-platform build + package scripts
-  beside it: `build-catalog-{windows.ps1,macos.sh,linux.sh}` (build +
-  `ctest`), `package-catalog-{windows.ps1,macos.sh,linux.sh}`
-  (Inno EXE / DragNDrop DMG / TGZ). `packaging/catalog.iss.in` is
-  the Windows installer template.
-- `crates/catalog-core/` — GUI-free Rust business logic.
-- `crates/catalog-ffi/` — C ABI over core (staticlib the Qt shells
-  link; JSON in/out, blocking calls, tokio inside).
-- `crates/catalog-cli/` — acceptance harness (`library open|list|detail`,
-  `smb`, `cover`, `kobo`, `settings` probes).
-- Build trees live outside the repo (`~/build-catalog` on
-  win10/debian, `source/builds/catalog` on Mac) + cargo `target/`.
+## Features
 
-## Build
+- **★ Read on Kobo** — open a book directly on your Kobo, or sync it to the device if it is not there yet.
+- **Fast library grid** — scroll thousands of books with covers. Tested against a 6,755-book library.
+- **Search that helps** — by title, author, series, or tag, with a form that fills the dropdowns for you.
+- **Book detail** — cover, author, publisher, ISBN, and description at a glance before you read.
+- **Live Calibre library** — reads your Calibre database on your PC or over the LAN. No import step, no duplicates.
+- **Windows, macOS & Linux** — same app on all three platforms. Same features, same flow.
 
-Precondition: sources committed (mirrors go from a fixed commit).
+![Settings](https://www.jocala.com/catalog/images/catalog-settings.png)
+![Search](https://www.jocala.com/catalog/images/catalog-search.png)
 
-- **win10** (static Qt 6.11.1): mirror `qt` + `crates/` +
-  `Cargo.toml`/`Cargo.lock`; run `build-catalog-windows.ps1` from
-  `C:\source\catalog\qt` (cargo with `+crt-static` + cmake + build +
-  `ctest`). Package after build: `package-catalog-windows.ps1`.
-- **debian** (system Qt via `qt6-base-dev`): mirror same; run
-  `qt/build-catalog-linux.sh` (plain cargo + cmake + build +
-  `ctest` offscreen — headless box). Package after build:
-  `qt/package-catalog-linux.sh` (TGZ).
-- **macOS** (static Qt 6.11.1): `qt/build-catalog-macos.sh`
-  (universal Rust lib + universal app + `ctest`). Package after
-  build: `qt/package-catalog-macos.sh` (unsigned DMG for now).
-- All build scripts take `--clean` (`-Clean` on Windows) to wipe the
-  CMake build dir for a fresh build; default is incremental.
+## Get Catalog
+
+Catalog is free for Windows, macOS, and Linux. No ads, no tracking. Just point Catalog at your Calibre library and start reading.
+
+| Platform | Size | Download |
+|----------|------|----------|
+| Windows | 13 MB | [jocala-catalog.1.0.exe](https://www.jocala.com/catalog/jocala-catalog.1.0.exe) |
+| macOS | 34 MB | [jocala-catalog.1.0.dmg](https://www.jocala.com/catalog/jocala-catalog.1.0.dmg) |
+| Linux | 12 MB | [jocala-catalog.1.0.tar.gz](https://www.jocala.com/catalog/jocala-catalog.1.0.tar.gz) |
+
+More at [jocala.com/catalog](https://www.jocala.com/catalog/) ·
+[Changelog](https://www.jocala.com/catalog/changelog.txt)
+
+© 2026 Jocala Software · Read on Kobo requires KOReader and SSH.
+
+## Build from source
+
+One tree, three targets. Qt Widgets shell (`qt/`) over the Rust engine
+(`crates/catalog-core` + `crates/catalog-ffi`); `crates/catalog-cli` is a
+headless acceptance harness.
+
+- **Windows** (static Qt 6.11.1): mirror `qt` + `crates/` + `Cargo.toml`/`Cargo.lock`,
+  run `qt/build-catalog-windows.ps1`, then `qt/package-catalog-windows.ps1`.
+- **Linux** (system Qt via `qt6-base-dev`): run `qt/build-catalog-linux.sh`,
+  then `qt/package-catalog-linux.sh` (TGZ).
+- **macOS** (static Qt 6.11.1): run `qt/build-catalog-macos.sh`
+  (universal app), then `qt/package-catalog-macos.sh` (DMG).
 
 Verify: `cargo test --workspace`,
 `cargo clippy --workspace --all-targets -- -D warnings`.
 
 Full procedure (release, staging, AppId): `AGENTS.md`.
-Prior shells (SwiftUI/WPF/WinUI) + frozen Rust UIs are archived in
-`/Users/jeff/source/backups/` (final tarballs) and git history.
