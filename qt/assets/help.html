@@ -36,13 +36,52 @@ Kobo e-reader. The Windows, macOS, and Linux versions work the same way.</p>
   <li>Open <b>Settings</b> (toolbar button).</li>
   <li>Pick a library source: <b>SMB</b> (a Calibre library on another computer
       or NAS) or <b>Local</b> (a Calibre folder on this computer).</li>
-  <li>Fill in the details (see §6), press the <b>Test</b> buttons until you see
+  <li>Fill in the details (see §7), press the <b>Test</b> buttons until you see
       <b>Pass</b>, then <b>Save</b> — the library re-reads with the new settings.</li>
   <li>Your books appear in the main window. If the window is empty, it will
       point you back to Settings.</li>
 </ol>
 
-<h2>2. Browsing the library</h2>
+<h2>2. Kobo setup (do this once)</h2>
+<p>Reading and syncing need three things on the device: <b>KOReader</b>
+installed, the Kobo's own <b>SSH</b> server turned on (port 22), and the
+Kobo <b>awake on your home Wi-Fi</b> so you can reach it by IP address
+(find it on the device under <i>Settings → Wi-Fi</i>). Do this once;
+the app remembers the rest in Settings.</p>
+<ol>
+  <li><b>Install KOReader</b> — the one-click packages bundle KOReader with
+      its launcher:
+      <a href="https://www.mobileread.com/forums/showthread.php?t=314220">One-Click
+      Install Packages for KOReader &amp; Plato</a>
+      (see also the
+      <a href="https://wiki.mobileread.com/wiki/KOReader">MobileRead KOReader wiki</a>).
+      Plug the Kobo in over USB, extract the package to the root of the
+      device, eject, and let it reboot.</li>
+  <li><b>Turn on the Kobo's SSH server</b> — on current firmware, connect
+      over USB and rename <code>.kobo/ssh-disabled</code> to
+      <code>.kobo/ssh-enabled</code>, then reboot. Afterwards
+      <code>ssh root@&lt;device_ip&gt;</code> prompts you to set the root
+      password on first connect
+      (<a href="https://www.mobileread.com/forums/showthread.php?t=370129">enabling SSH</a>;
+      <a href="https://www.mobileread.com/forums/showthread.php?t=362428">credentials
+      and password notes</a>).</li>
+  <li><b>Don't confuse the two SSH servers</b> — KOReader also ships a
+      Dropbear plugin on port <b>2222</b>
+      (<a href="https://www.mobileread.com/forums/showthread.php?t=353738">details</a>).
+      Jocala Catalog uses the <b>device</b> SSH server on port <b>22</b>.</li>
+  <li><b>Key login (recommended)</b> — the first-run stacking-fix check needs
+      key login; password-only Kobos skip the offer silently (see §6). Add
+      the Kobo's IP in <b>Settings → Kobo</b>, store the SSH password or a
+      key, and press <b>Test</b> until you see <b>Pass</b>.</li>
+</ol>
+<ul>
+  <li><b>Same network, awake, stable IP</b> — the Kobo must be awake and on
+      the same network as this computer. Kobos sleep aggressively: press the
+      power button before reading. If the router reassigns the IP, update it
+      in Settings → Kobo (see Troubleshooting).</li>
+</ul>
+
+<h2>3. Browsing the library</h2>
 <ul>
   <li><b>Browse picker</b> — switch the gallery root between
       <b>Books</b>, <b>Author</b>, <b>Series</b>, and <b>Tags</b>.</li>
@@ -61,7 +100,7 @@ Kobo e-reader. The Windows, macOS, and Linux versions work the same way.</p>
       <i>Show Details</i> and <i>Open on Kobo</i>.</li>
 </ul>
 
-<h2>3. Searching</h2>
+<h2>4. Searching</h2>
 <ul>
   <li>Press the <b>🔍 Search</b> button to open the search form.</li>
   <li><b>All-fields box</b> — matches across title, author, series, and tags.
@@ -78,15 +117,15 @@ Kobo e-reader. The Windows, macOS, and Linux versions work the same way.</p>
       back. Click a result to open its details.</li>
 </ul>
 
-<h2>4. Book details</h2>
+<h2>5. Book details</h2>
 <p>Double-click a book (or press <kbd>Enter</kbd>) to open its details: cover, title,
 author, series + number, tags, publisher, ISBN, and description.</p>
 <ul>
-  <li><b>Read on Kobo</b> — opens the book on your Kobo (see §5).</li>
+  <li><b>Read on Kobo</b> — opens the book on your Kobo (see §6).</li>
   <li><b>Close</b> (or <kbd>Esc</kbd>) returns to the library.</li>
 </ul>
 
-<h2>5. Reading on Kobo</h2>
+<h2>6. Reading on Kobo</h2>
 <ol>
   <li>In <b>Settings → Kobo</b>, add your Kobo's IP address (find it on the
       device under <i>Settings → Wi-Fi</i>). The Kobo must be awake and on the
@@ -117,7 +156,7 @@ author, series + number, tags, publisher, ISBN, and description.</p>
   <li>The <b>★ star</b> in Settings marks the default Kobo used for reading.</li>
 </ul>
 
-<h2>6. Settings reference</h2>
+<h2>7. Settings reference</h2>
 <ul>
   <li><b>Library Source</b> — <b>SMB</b> or <b>Local</b> (either-or).</li>
   <li><b>Local Calibre Path</b> — the Calibre folder (the one containing
@@ -140,21 +179,24 @@ author, series + number, tags, publisher, ISBN, and description.</p>
       the library.</li>
 </ul>
 
-<h2>7. Menus &amp; shortcuts</h2>
+<h2>8. Menus &amp; shortcuts</h2>
 <ul>
   <li><b>File → New Window</b> — open another library window
       (<kbd>Cmd+N</kbd> Mac,
       <kbd>Ctrl+N</kbd> Windows/Linux).</li>
-  <li><b>File → Open Data Folder</b> — §8.</li>
+  <li><b>File → Open Data Folder</b> — §9.</li>
   <li><b>File → Settings…</b> — or the toolbar <b>Settings</b> button.</li>
   <li><b>File → Exit</b> quits the app.</li>
   <li><b>Help → Jocala Catalog Help</b> — this page.</li>
-  <li><b>Help → About Jocala Catalog</b> — version, links, donations.</li>
+  <li><b>About Jocala Catalog</b> — version, links, donations. On Windows/Linux
+      it's under <b>Help</b>; on Mac it's under the <b>JocalaCatalog</b>
+      application menu (as are <b>Settings…</b> and <b>Quit</b>, which leave
+      the File menu).</li>
   <li>In dialogs: <kbd>Enter</kbd> confirms (Search, Read on Kobo),
       <kbd>Esc</kbd> closes.</li>
 </ul>
 
-<h2>8. Your data &amp; passwords</h2>
+<h2>9. Your data &amp; passwords</h2>
 <ul>
   <li>Settings and caches live in
       <code>~/Library/Application Support/com.jocala.Catalog/</code>
@@ -171,7 +213,7 @@ author, series + number, tags, publisher, ISBN, and description.</p>
   <li>Never enter credentials anywhere except Settings.</li>
 </ul>
 
-<h2>9. Troubleshooting</h2>
+<h2>10. Troubleshooting</h2>
 <ul>
   <li><b>Can't connect / empty library</b> — open Settings and work through
       the Test buttons: Test SMB, then Test Calibre (or Test for a local
