@@ -28,4 +28,6 @@ cmd /c "`"$vcvars`" -vcvars_ver=14.51 > nul 2>&1 && set" | ForEach-Object {
 }
 
 cmake --build $BuildDir --target package-win
-Get-ChildItem "$BuildDir\packages\"
+# Inno OutputDir is ..\install relative to the .iss in $BuildDir
+# (catalog.iss.in), not $BuildDir\packages.
+Get-ChildItem "$env:USERPROFILE\install\"
