@@ -5,6 +5,7 @@
 #include "covercache.h"
 #include "models.h"
 #include "settings.h"
+#include <QElapsedTimer>
 #include <QFutureWatcher>
 #include <QObject>
 #include <QSet>
@@ -64,6 +65,7 @@ signals:
 
 private slots:
     void onLoaded();
+    void onLoadTimeout(int gen, const QString &kind);
     void onHandoffChecked();
     void onHandoffEnsured();
     void onCoverNeeded(const QString &path);
@@ -75,6 +77,7 @@ private:
         QString kind; // books|authors|series|tags|search|detail
         QString payload;
         QString error;
+        int gen = 0; // startLoad generation: stale results are discarded
     };
     void startLoad(const QString &kind, const QString &arg1 = QString());
     static LoadResult doLoad(QString cfg, QString kind, QString arg1, Sort sort,
@@ -138,4 +141,13 @@ private:
                          const QString &ip);
     void markHandoffPromptDone();
     QFutureWatcher<LoadResult> m_watcher;
+    // Load watchdog: startLoad latches m_loading until onLoaded. If the
+    // worker never returns (some FFI stages have no deadline), the window
+    // would sit on Loading… forever and every later reload() would no-op.
+    // The watchdog orphans the stuck generation and raises an error so
+    // the user gets Retry instead of a force-quit. Late results from
+    // orphaned generations are discarded in onLoaded.
+    int m_loadGen = 0;
+    QElapsedTimer m_loadClock;
+    static const int LOAD_TIMEOUT_MS = 45000;
 };

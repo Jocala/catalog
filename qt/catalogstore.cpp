@@ -2,6 +2,7 @@
 #include "ffi.h"
 #include "ffijson.h"
 #include "kobojob.h"
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -15,11 +16,11 @@
 namespace {
 int g_traceN = 0;
 void trace(const QString &line) {
-    if (g_traceN++ >= 250) return;
+    if (g_traceN++ >= 2000) return;
     QFile f(QDir::tempPath() + "/qt-sort.txt");
     if (f.open(QIODevice::Append | QIODevice::Text)) {
         QTextStream s(&f);
-        s << line << "\n";
+        s << QDateTime::currentDateTime().toString("MM-dd hh:mm:ss.zzz ") << line << "\n";
     }
 }
 }
@@ -268,6 +269,9 @@ void CatalogStore::startLoad(const QString &kind, const QString &arg1) {
     if (m_loading)
         return;
     m_loading = true;
+    const int gen = ++m_loadGen;
+    m_loadClock.start();
+    trace(QString("load start gen=%1 kind=%2").arg(gen).arg(kind));
     emit loadingChanged(true);
     QString cfg = m_settings.libraryConfigJson(m_freshNext);
     m_freshNext = false;
@@ -287,9 +291,16 @@ void CatalogStore::startLoad(const QString &kind, const QString &arg1) {
             arg = drillTag;
     }
     QFuture<LoadResult> f = QtConcurrent::run([=]() {
-        return doLoad(cfg, kind, arg, sort, mode, params);
+        LoadResult r = doLoad(cfg, kind, arg, sort, mode, params);
+        r.gen = gen;
+        return r;
     });
     m_watcher.setFuture(f);
+    // Watchdog: the FFI bounds only the metadata fetch (30s); stages
+    // past it have no deadline. If the worker never returns, orphan the
+    // generation so a late result can't resurrect it, and hand the user
+    // a retry instead of a permanent Loading… page.
+    QTimer::singleShot(LOAD_TIMEOUT_MS, this, [this, gen, kind]() { onLoadTimeout(gen, kind); });
 }
 
 CatalogStore::LoadResult CatalogStore::doLoad(QString cfg, QString kind, QString arg1,
@@ -362,13 +373,33 @@ CatalogStore::LoadResult CatalogStore::doLoad(QString cfg, QString kind, QString
 }
 
 void CatalogStore::onLoaded() {
+    LoadResult r = m_watcher.result();
+    if (r.gen != m_loadGen) {
+        trace(QString("loaded STALE gen=%1 cur=%2 kind=%3").arg(r.gen).arg(m_loadGen).arg(r.kind));
+        return; // orphaned by the watchdog (latch already cleared there)
+    }
     m_loading = false;
+    trace(QString("loaded gen=%1 kind=%2 ms=%3").arg(r.gen).arg(r.kind).arg(m_loadClock.elapsed()));
     // Order matters: the page decision (loadingChanged -> rowCount check)
     // must see the filled model. Emitting first locks a fresh launch onto
     // the empty page even when books arrived — the grid then never shows
     // until the next reload finds stale rows.
-    applyLoad(m_watcher.result());
+    applyLoad(r);
     emit loadingChanged(false);
+}
+
+void CatalogStore::onLoadTimeout(int gen, const QString &kind) {
+    if (gen != m_loadGen || !m_loading)
+        return;
+    trace(QString("load TIMEOUT gen=%1 kind=%2 ms=%3").arg(gen).arg(kind).arg(m_loadClock.elapsed()));
+    ++m_loadGen; // orphan the stuck worker; its late result dies in onLoaded
+    m_loading = false;
+    emit loadingChanged(false);
+    if (kind == "detail") {
+        emit statusChanged("Book detail timed out — try again", false, false);
+        return;
+    }
+    emit dbError("Library load timed out after 45s (the library may be unreachable).");
 }
 
 void CatalogStore::applyLoad(const LoadResult &r) {
