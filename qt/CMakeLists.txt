@@ -58,6 +58,7 @@ set(SOURCES
     helpdialog.cpp
     kobojob.cpp
     theme.cpp
+    tagicon.cpp
     listdelegate.cpp
     updatecheck.cpp
 )
@@ -81,6 +82,7 @@ set(HEADERS
     helpdialog.h
     kobojob.h
     theme.h
+    tagicon.h
     listdelegate.h
     updatecheck.h
     version.h

@@ -1,5 +1,6 @@
 #include "listdelegate.h"
 #include "bookmodel.h"
+#include "tagicon.h"
 #include <QPainter>
 
 ListDelegate::ListDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
@@ -20,13 +21,18 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
     int textX = opt.rect.x() + margin + thumbBox + margin;
     int textW = opt.rect.right() - textX - margin;
 
-    QPixmap thumb = idx.data(Qt::DecorationRole).value<QPixmap>();
-    if (!thumb.isNull()) {
-        int tw = qMin(thumb.width(), thumbBox);
-        int th = qMin(thumb.height(), thumbBox);
-        int tx = opt.rect.x() + margin + (thumbBox - tw) / 2;
-        int ty = opt.rect.y() + (RowHeight - th) / 2;
-        p->drawPixmap(tx, ty, tw, th, thumb);
+    if (idx.data(BookModel::TagTileRole).toBool()) {
+        paintTagIcon(p, QRectF(opt.rect.x() + margin, opt.rect.y(),
+                               thumbBox, RowHeight));
+    } else {
+        QPixmap thumb = idx.data(Qt::DecorationRole).value<QPixmap>();
+        if (!thumb.isNull()) {
+            int tw = qMin(thumb.width(), thumbBox);
+            int th = qMin(thumb.height(), thumbBox);
+            int tx = opt.rect.x() + margin + (thumbBox - tw) / 2;
+            int ty = opt.rect.y() + (RowHeight - th) / 2;
+            p->drawPixmap(tx, ty, tw, th, thumb);
+        }
     }
 
     QString title = idx.data(BookModel::TitleRole).toString();

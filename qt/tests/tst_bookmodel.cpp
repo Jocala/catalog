@@ -58,6 +58,17 @@ private slots:
         QCOMPARE(m.data(m.index(0), BookModel::TagsRole).toString(),
                  QString("Fiction, Romance"));
     }
+    void tagTileRole() {
+        BookModel m;
+        m.setTiles({"Fiction"}, {"1 books"}, {1}, {}, true);
+        QVERIFY(m.data(m.index(0), BookModel::TagTileRole).toBool());
+
+        BookItem b;
+        b.id = 2;
+        b.title = "Emma";
+        m.setBooks({b});
+        QVERIFY(!m.data(m.index(0), BookModel::TagTileRole).toBool());
+    }
 };
 
 QTEST_MAIN(TstBookModel)

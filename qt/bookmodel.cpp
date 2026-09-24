@@ -16,13 +16,15 @@ void BookModel::setBooks(const QList<BookItem> &books) {
         r.series = b.series;
         r.seriesIndex = b.seriesIndex;
         r.tags = b.tags;
+        r.tagTile = false;
         m_rows.append(r);
     }
     endResetModel();
 }
 
 void BookModel::setTiles(const QStringList &titles, const QStringList &subs,
-                         const QList<qint64> &ids, const QStringList &coverPaths) {
+                         const QList<qint64> &ids, const QStringList &coverPaths,
+                         bool tagTiles) {
     beginResetModel();
     m_rows.clear();
     m_covers.clear();
@@ -33,6 +35,7 @@ void BookModel::setTiles(const QStringList &titles, const QStringList &subs,
         r.title = titles[i];
         r.sub = i < subs.size() ? subs[i] : QString();
         r.coverPath = i < coverPaths.size() ? coverPaths[i] : QString();
+        r.tagTile = tagTiles;
         m_rows.append(r);
     }
     endResetModel();
@@ -103,6 +106,8 @@ QVariant BookModel::data(const QModelIndex &index, int role) const {
         return r.seriesIndex;
     case TagsRole:
         return r.tags;
+    case TagTileRole:
+        return r.tagTile;
     case CoverRole: {
         auto it = m_covers.find(r.coverPath);
         if (it != m_covers.end())

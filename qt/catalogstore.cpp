@@ -400,7 +400,7 @@ void CatalogStore::applyLoad(const LoadResult &r) {
                 ids << x.id;
                 covers << QString();
             }
-            m_model.setTiles(t, s, ids, covers);
+            m_model.setTiles(t, s, ids, covers, true);
         }
     } else if (r.kind == "drill" || r.kind == "search") {
         QList<BookItem> books = parseBooks(payload);

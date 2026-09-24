@@ -3,6 +3,7 @@
 #include "bookinfodialog.h"
 #include "helpdialog.h"
 #include "listdelegate.h"
+#include "tagicon.h"
 #include "searchdialog.h"
 #include "settingsdialog.h"
 #include "theme.h"
@@ -46,20 +47,26 @@ void TileDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
         p->fillRect(opt.rect, opt.palette.alternateBase());
     }
     QRect coverRect(opt.rect.x() + 6, opt.rect.y() + 4, 187, 240);
-    QPixmap pm = idx.data(BookModel::CoverRole).value<QPixmap>();
-    if (pm.isNull()) {
-        p->fillRect(coverRect, QColor(0, 0, 0, 20));
-        p->setPen(Qt::gray);
-        p->drawText(coverRect, Qt::AlignCenter, "No cover");
+    if (idx.data(BookModel::TagTileRole).toBool()) {
+        // Tags are category marks, not books: use the same glyph in the
+        // tile position instead of asking the cover pipeline for a path.
+        paintTagIcon(p, coverRect);
     } else {
-        // Aspect-fit: source aspects vary (the engine fits within the
-        // fetch box), so a raw drawPixmap stretch distorts. Scale into
-        // the box, center, gutter the remainder.
-        QSize fitted = pm.size().scaled(coverRect.size(), Qt::KeepAspectRatio);
-        QPoint at(coverRect.center().x() - fitted.width() / 2,
-                  coverRect.center().y() - fitted.height() / 2);
-        p->fillRect(coverRect, QColor(0, 0, 0, 20));
-        p->drawPixmap(QRect(at, fitted), pm);
+        QPixmap pm = idx.data(BookModel::CoverRole).value<QPixmap>();
+        if (pm.isNull()) {
+            p->fillRect(coverRect, QColor(0, 0, 0, 20));
+            p->setPen(Qt::gray);
+            p->drawText(coverRect, Qt::AlignCenter, "No cover");
+        } else {
+            // Aspect-fit: source aspects vary (the engine fits within the
+            // fetch box), so a raw drawPixmap stretch distorts. Scale into
+            // the box, center, gutter the remainder.
+            QSize fitted = pm.size().scaled(coverRect.size(), Qt::KeepAspectRatio);
+            QPoint at(coverRect.center().x() - fitted.width() / 2,
+                      coverRect.center().y() - fitted.height() / 2);
+            p->fillRect(coverRect, QColor(0, 0, 0, 20));
+            p->drawPixmap(QRect(at, fitted), pm);
+        }
     }
     QRect titleRect(opt.rect.x(), opt.rect.y() + 246, 200, 34);
     p->setPen(opt.palette.text().color());

@@ -9,13 +9,14 @@
 class BookModel : public QAbstractListModel {
     Q_OBJECT
 public:
-    enum Roles { TitleRole = Qt::UserRole + 1, AuthorRole, PathRole, CoverRole, IdRole, SeriesRole, SeriesIndexRole, TagsRole };
+    enum Roles { TitleRole = Qt::UserRole + 1, AuthorRole, PathRole, CoverRole, IdRole, SeriesRole, SeriesIndexRole, TagsRole, TagTileRole };
 
     explicit BookModel(QObject *parent = nullptr);
 
     void setBooks(const QList<BookItem> &books);
     void setTiles(const QStringList &titles, const QStringList &subs,
-                  const QList<qint64> &ids, const QStringList &coverPaths);
+                  const QList<qint64> &ids, const QStringList &coverPaths,
+                  bool tagTiles = false);
     void setCover(const QString &path, const QImage &img);
     void setCoverBatch(const QList<QPair<QString, QImage>> &covers);
     BookItem bookAt(int row) const;
@@ -36,6 +37,7 @@ private:
         QString series;
         double seriesIndex = 0;
         QString tags;
+        bool tagTile = false;
     };
     QList<Row> m_rows;
     QHash<QString, QPixmap> m_covers;
