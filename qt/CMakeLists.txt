@@ -1,7 +1,7 @@
 # Catalog: Qt Widgets + static Rust catalog-ffi (replaces CatalogWin).
 # Mirrors adblink conventions (static Qt, Ninja, Qt Test, package-win).
 cmake_minimum_required(VERSION 3.16)
-project(catalog VERSION 1.01 LANGUAGES C CXX)
+project(catalog VERSION 1.02 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

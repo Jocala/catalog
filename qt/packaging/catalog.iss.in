@@ -2,7 +2,7 @@
 ; rides inside the binary via qrc). Same product as the WPF build:
 ; same AppId so installing replaces it, same publisher.
 #ifndef VERSION
-  #define VERSION "1.01"
+  #define VERSION "1.02"
 #endif
 #define MyAppExeName "JocalaCatalog.exe"
 
