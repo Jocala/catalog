@@ -32,4 +32,11 @@ lipo -create \
     -DCMAKE_OSX_DEPLOYMENT_TARGET="14.0" \
     -DFFI_LIB="$FFI"
 "$CMAKE" --build "$BLD"
+# Local Network prompt: without NSLocalNetworkUsageDescription macOS never
+# asks and LAN SMB fails (EHOSTUNREACH on fresh installs). CMake regenerates
+# Info.plist on reconfigure, so (re-)apply it every build (idempotent).
+/usr/libexec/PlistBuddy -c "Delete :NSLocalNetworkUsageDescription" \
+    "$BLD/JocalaCatalog.app/Contents/Info.plist" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'Catalog connects to your Calibre library over the local network (SMB) and to your Kobo reader over WiFi.'" \
+    "$BLD/JocalaCatalog.app/Contents/Info.plist"
 "$CTEST" --test-dir "$BLD" --output-on-failure

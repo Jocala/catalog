@@ -121,9 +121,24 @@ fn open_db(
     let bytes = match bytes {
         Some(b) => b,
         None => {
+            // Hung TCP connect/read used to block the shell's Loading…
+            // bar forever (15-min report on a fresh m1 install). Bound the
+            // whole metadata.db fetch so doLoad always returns to the UI.
             let b = runtime()
-                .block_on(src.read_db_bytes())
-                .map_err(|e| e.to_string())?;
+                .block_on(async {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        src.read_db_bytes(),
+                    )
+                    .await
+                    {
+                        Ok(Ok(b)) => Ok(b),
+                        Ok(Err(e)) => Err(e.to_string()),
+                        Err(_) => Err(
+                            "network: timed out after 30s reading metadata.db (check host/share/path)".to_string(),
+                        ),
+                    }
+                })?;
             if let Ok(mut cache) = CACHE
                 .get_or_init(|| DbCache::new(std::collections::HashMap::new()))
                 .lock()
