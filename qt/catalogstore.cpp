@@ -7,7 +7,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPair>
-// TEMP: capped trace for sort-change gaps (revert before merge).
+// Capped load-lifecycle trace (startup-hang diagnostics): a few lines
+// per launch in the temp dir. Per-cover chatter was removed for release.
 #include <QDir>
 #include <QFile>
 #include <QTextStream>
@@ -65,7 +66,6 @@ void CatalogStore::setMode(Mode m) {
 void CatalogStore::setSort(Sort s) {
     m_sort = s;
     ++m_coverGen;
-    trace(QString("setsort gen=%1").arg(m_coverGen));
     if (!m_drillKind.isEmpty() || m_searching)
         startLoad(m_searching ? "search" : "drill");
     else
@@ -503,7 +503,6 @@ QString CatalogStore::statusCounts() {
 
 void CatalogStore::onCoverNeeded(const QString &path) {
     if (path.isEmpty() || m_inFlight.contains(path)) {
-        trace(QString("need skip gen=%1 active=%2 %3").arg(m_coverGen).arg(m_coverActive).arg(path));
         return;
     }
     // Memory hit: the model may have been reset (sort/mode/search) since
@@ -512,7 +511,6 @@ void CatalogStore::onCoverNeeded(const QString &path) {
     // re-shown after a reset stayed blank with no refetch.)
     auto mem = m_coverCache.find(path);
     if (mem != m_coverCache.end()) {
-        trace(QString("need memhit gen=%1 %2").arg(m_coverGen).arg(path));
         onCoverBatch(path, *mem);
         return;
     }
@@ -522,17 +520,13 @@ void CatalogStore::onCoverNeeded(const QString &path) {
     if (m_diskCache.tryGet(path, jpg)) {
         QImage img;
         if (img.loadFromData(jpg)) {
-            trace(QString("need diskhit gen=%1 %2").arg(m_coverGen).arg(path));
             onCoverBatch(path, img);
             return;
         }
-        trace(QString("need diskcorrupt gen=%1 %2").arg(m_coverGen).arg(path));
     }
     if (m_coverActive >= COVER_MAX) {
-        trace(QString("need coalesce gen=%1 active=%2 %3").arg(m_coverGen).arg(m_coverActive).arg(path));
         return; // coalesce: the path re-demands on its next realize
     }
-    trace(QString("need fetch gen=%1 %2").arg(m_coverGen).arg(path));
     fetchCover(path, m_coverGen);
 }
 
@@ -557,7 +551,6 @@ void CatalogStore::fetchCover(const QString &path, int gen) {
         w->deleteLater();
         m_inFlight.remove(r.first);
         --m_coverActive;
-        trace(QString("done null=%1 gen=%2 cur=%3 %4").arg(r.second.isNull()).arg(gen).arg(m_coverGen).arg(r.first));
         if (gen != m_coverGen)
             return; // superseded load: keep the disk bytes, skip the paint
         onCoverBatch(r.first, r.second);
@@ -567,7 +560,6 @@ void CatalogStore::fetchCover(const QString &path, int gen) {
 
 void CatalogStore::onCoverBatch(const QString &path, QImage img) {
     if (img.isNull()) {
-        trace(QString("batch nullimg %1").arg(path));
         return;
     }
     auto it = m_coverCache.find(path);
