@@ -352,7 +352,9 @@ void MainWindow::onTileActivated(const QModelIndex &idx) {
     if (!m_store.showingBooks()) {
         m_libraryBtn->setText("‹ Back");
         m_libraryBtn->setVisible(true);
-        if (m == CatalogStore::Authors) {
+        if (m_store.searchSeriesMode()) {
+            m_store.drillSeries(id, title);
+        } else if (m == CatalogStore::Authors) {
             m_store.drillAuthor(id, title);
         } else if (m == CatalogStore::Series) {
             m_store.drillSeries(id, title);

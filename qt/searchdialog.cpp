@@ -63,6 +63,7 @@ QJsonObject SearchDialog::params() const {
     p.insert("author", m_author->text());
     p.insert("series", m_series->currentText());
     p.insert("tag", m_tags->currentText());
+    p.insert("expand_tag", m_expand->isChecked());
     return p;
 }
 

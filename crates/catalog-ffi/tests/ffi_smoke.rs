@@ -99,6 +99,30 @@ fn ffi_browse_modes() {
 }
 
 #[test]
+fn ffi_tag_series_expand() {
+    let cfg = fixture_config();
+    let c = || cfg.as_ptr();
+    let mode = |m: &str| {
+        ok_of(&take_str(catalog_browse(
+            c(),
+            CString::new(m).unwrap().as_ptr(),
+            false,
+            false,
+        )))
+    };
+    // Mystery tags only the Holmes pair; Romance only Classics; Fiction all.
+    let holmes = mode("tag_series:Mystery");
+    let arr = holmes.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["name"], "Holmes");
+    assert_eq!(mode("tag_series:romance").as_array().unwrap().len(), 1);
+    assert_eq!(mode("tag_series:Fiction").as_array().unwrap().len(), 2);
+    // Case-insensitive + unknown tag yields [].
+    assert_eq!(mode("tag_series:mystery").as_array().unwrap().len(), 1);
+    assert!(mode("tag_series:NoSuchTag").as_array().unwrap().is_empty());
+}
+
+#[test]
 fn ffi_search_and_detail() {
     let cfg = fixture_config();
     let params = CString::new(r#"{"author":"austen"}"#).unwrap();

@@ -102,16 +102,20 @@ void CatalogStore::exitDrill() {
 }
 
 bool CatalogStore::showingBooks() const {
-    return m_searching || !m_drillKind.isEmpty() || m_mode == Books;
+    if (m_searching)
+        return !m_searchSeriesMode;
+    return !m_drillKind.isEmpty() || m_mode == Books;
 }
 
 void CatalogStore::exitSearch() {
     m_searching = false;
+    m_searchSeriesMode = false;
 }
 
 void CatalogStore::runSearch(const QJsonObject &params) {
     m_searchParams = params;
     m_searching = true;
+    m_searchSeriesMode = false;
     m_drillKind.clear();
     ++m_coverGen;
     startLoad("search");
@@ -321,9 +325,26 @@ CatalogStore::LoadResult CatalogStore::doLoad(QString cfg, QString kind, QString
             raw = catalog_browse(cfgB.constData(), arg1.toUtf8().constData(), desc, byAuthor);
         }
     } else if (kind == "search") {
-        searchParams.insert("sort_descending", desc);
-        QByteArray pb = QJsonDocument(searchParams).toJson(QJsonDocument::Compact);
-        raw = catalog_search(cfgB.constData(), pb.constData());
+        // Tag→series expand (mirrors SearchForm::is_tag_expand): a tag-only
+        // search with the box checked browses series containing the tag
+        // instead of books carrying it.
+        QString tag = searchParams.value("tag").toString().trimmed();
+        bool expand = searchParams.value("expand_tag").toBool(false);
+        bool tagOnly = expand && !tag.isEmpty()
+            && searchParams.value("query").toString().trimmed().isEmpty()
+            && searchParams.value("title").toString().trimmed().isEmpty()
+            && searchParams.value("author").toString().trimmed().isEmpty()
+            && searchParams.value("series").toString().trimmed().isEmpty();
+        if (tagOnly) {
+            QString mode = QString("tag_series:") + tag;
+            raw = catalog_browse(cfgB.constData(), mode.toUtf8().constData(), desc, byAuthor);
+            if (raw)
+                r.kind = "search-series";
+        } else {
+            searchParams.insert("sort_descending", desc);
+            QByteArray pb = QJsonDocument(searchParams).toJson(QJsonDocument::Compact);
+            raw = catalog_search(cfgB.constData(), pb.constData());
+        }
     } else if (kind == "detail") {
         raw = catalog_detail(cfgB.constData(), arg1.toLongLong());
     }
@@ -402,18 +423,38 @@ void CatalogStore::applyLoad(const LoadResult &r) {
             }
             m_model.setTiles(t, s, ids, covers, true);
         }
-    } else if (r.kind == "drill" || r.kind == "search") {
-        QList<BookItem> books = parseBooks(payload);
-        if (r.kind == "search")
-            m_searchBooks = books.size();
-        m_model.setBooks(books);
+    } else if (r.kind == "drill" || r.kind == "search" || r.kind == "search-series") {
+        if (r.kind == "search-series") {
+            QStringList t, s;
+            QList<qint64> ids;
+            QStringList covers;
+            for (const SeriesItem &x : parseSeries(payload)) {
+                t << x.name;
+                s << x.bookCount;
+                ids << x.id;
+                covers << x.firstPath;
+            }
+            m_searchSeries = t.size();
+            m_searchSeriesMode = true;
+            m_model.setTiles(t, s, ids, covers);
+        } else {
+            QList<BookItem> books = parseBooks(payload);
+            if (r.kind == "search") {
+                m_searchBooks = books.size();
+                m_searchSeriesMode = false;
+            }
+            m_model.setBooks(books);
+        }
     }
     emit countsChanged(statusCounts());
 }
 
 QString CatalogStore::statusCounts() {
-    if (m_searching)
+    if (m_searching) {
+        if (m_searchSeriesMode)
+            return QString("%1 series").arg(m_searchSeries);
         return QString("%1 results").arg(m_searchBooks);
+    }
     if (!m_drillKind.isEmpty())
         return QString("%1 books").arg(m_model.rowCount());
     switch (m_mode) {

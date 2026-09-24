@@ -631,6 +631,54 @@ pub fn all_series(
         .map_err(|e| CatalogDbError::Corrupt(e.to_string()))
 }
 
+/// Series that contain at least one book with the given tag (Swift
+/// `SmbCatalogDB.seriesByTag`, driving SearchFormSheet's tag→series
+/// expand). `book_count` is the full series size, not just tagged books.
+pub fn series_by_tag(
+    db: &Connection,
+    source: &FileSource,
+    tag_id: i64,
+    sort_desc: bool,
+    by_author: bool,
+) -> Result<Vec<SeriesSummary>, CatalogDbError> {
+    let order = if by_author {
+        format!(
+            "author_sort COLLATE NOCASE ASC, s.sort COLLATE NOCASE {}",
+            if sort_desc { "DESC" } else { "ASC" }
+        )
+    } else {
+        format!("s.sort {}", if sort_desc { "DESC" } else { "ASC" })
+    };
+    let sql = format!(
+        "SELECT s.id, s.name, COUNT(*) AS book_count,
+                (SELECT b.path FROM books b JOIN books_series_link bsl2 ON b.id = bsl2.book
+                 WHERE bsl2.series = s.id ORDER BY b.sort LIMIT 1) AS first_path,
+                (SELECT a.sort FROM books b JOIN books_series_link bsl2 ON b.id = bsl2.book
+                 JOIN books_authors_link bal ON bal.book = b.id JOIN authors a ON bal.author = a.id
+                 WHERE bsl2.series = s.id ORDER BY b.series_index LIMIT 1) AS author_sort
+         FROM series s JOIN books_series_link bsl ON s.id = bsl.series
+         WHERE EXISTS (SELECT 1 FROM books b2 JOIN books_tags_link btl2 ON btl2.book = b2.id
+                       JOIN books_series_link bsl2 ON bsl2.book = b2.id
+                       WHERE bsl2.series = s.id AND btl2.tag = ?1)
+         GROUP BY s.id ORDER BY {order}"
+    );
+    let mut stmt = db.prepare(&sql).map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;
+    let rows = stmt
+        .query_map([tag_id], |row| {
+            let rel: Option<String> = row.get(3).unwrap_or(None);
+            Ok(SeriesSummary {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                book_count: row.get::<_, i64>(2)? as usize,
+                first_book_path: rel.map(|r| source.book_path(&r)),
+                author: col_string(row, 4),
+            })
+        })
+        .map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| CatalogDbError::Corrupt(e.to_string()))
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SearchParams {
     pub query: String,

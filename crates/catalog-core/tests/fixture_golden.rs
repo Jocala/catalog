@@ -4,7 +4,7 @@
 
 use catalog_core::db::{
     all_authors, all_series, all_tags, book_detail, books_by_author, books_by_series, fetch_books,
-    fetch_count, open_memory_db, search_books, FileSource, SearchParams,
+    fetch_count, open_memory_db, search_books, series_by_tag, FileSource, SearchParams,
 };
 use std::path::PathBuf;
 
@@ -126,6 +126,40 @@ fn golden_series_search_orders_by_index() {
             "Aardvark"
         ]
     );
+}
+
+#[test]
+fn golden_series_by_tag() {
+    // Fixture tags: Fiction on all books, Romance on the Classics pair,
+    // Mystery on the Holmes pair.
+    let db = fixture_db();
+    let source = fixture_source();
+    let tag_id = |name: &str| {
+        all_tags(&db, false)
+            .unwrap()
+            .into_iter()
+            .find(|t| t.name == name)
+            .unwrap()
+            .id
+    };
+    let names = |tag: &str| {
+        let mut v: Vec<String> = series_by_tag(&db, &source, tag_id(tag), false, false)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        v.sort();
+        v
+    };
+    assert_eq!(names("Mystery"), vec!["Holmes"]);
+    assert_eq!(names("Romance"), vec!["Classics"]);
+    assert_eq!(names("Fiction"), vec!["Classics", "Holmes"]);
+    // Full series size, not just tagged books.
+    let holmes = series_by_tag(&db, &source, tag_id("Mystery"), false, false).unwrap();
+    assert_eq!(holmes.len(), 1);
+    assert_eq!(holmes[0].book_count, 2);
+    // Unknown tag id: no series.
+    assert!(series_by_tag(&db, &source, 424242, false, false).unwrap().is_empty());
 }
 
 #[test]

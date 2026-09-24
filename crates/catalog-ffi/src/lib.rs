@@ -261,7 +261,9 @@ pub extern "C" fn catalog_fetch_books(
 }
 
 /// Tag/author/series tiles + drill-in, by mode string:
-/// `"tags" | "authors" | "series" | "author_books:<id>" | "series_books:<id>"`.
+/// `"tags" | "authors" | "series" | "author_books:<id>" | "series_books:<id>"
+/// | "tag_series:<name>"` (series containing the named tag, case-insensitive;
+/// unknown tag yields `[]` — the search tag→series expand path).
 #[no_mangle]
 pub extern "C" fn catalog_browse(
     config_json: *const c_char,
@@ -301,6 +303,25 @@ pub extern "C" fn catalog_browse(
             let books =
                 db::books_by_series(&conn, &src, id).map_err(|e| e.to_string())?;
             return serde_json::to_value(&books).map_err(|e| e.to_string());
+        }
+        if let Some(name) = mode.strip_prefix("tag_series:") {
+            let name = name.trim();
+            if name.is_empty() {
+                return Err("missing tag name".to_string());
+            }
+            let tag_id: Option<i64> = conn
+                .query_row(
+                    "SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE",
+                    [name],
+                    |r| r.get(0),
+                )
+                .ok();
+            let series = match tag_id {
+                Some(id) => db::series_by_tag(&conn, &src, id, sort_descending, sort_by_author)
+                    .map_err(|e| e.to_string())?,
+                None => vec![],
+            };
+            return serde_json::to_value(&series).map_err(|e| e.to_string());
         }
         Err(format!("unknown browse mode: {mode}"))
     })

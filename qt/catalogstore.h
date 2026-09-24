@@ -24,6 +24,8 @@ public:
     Mode mode() const { return m_mode; }
     Sort sort() const { return m_sort; }
     bool showingBooks() const;
+    // Search tag→series expand shows series tiles, not books.
+    bool searchSeriesMode() const { return m_searching && m_searchSeriesMode; }
     // Startup restore: set toolbar state without starting a load
     // (the constructor's reload() does the single load).
     void setInitialView(Mode m, Sort s);
@@ -98,6 +100,10 @@ private:
     QString m_drillTag;
     QJsonObject m_searchParams;
     int m_searchBooks = 0;
+    // Tag→series expand state: a tag-only search with expand shows a
+    // series grid (drillable) instead of the book grid.
+    bool m_searchSeriesMode = false;
+    int m_searchSeries = 0;
     QSet<QString> m_inFlight;
     QHash<QString, QImage> m_coverCache;
     DiskCoverCache m_diskCache;
