@@ -9,19 +9,24 @@
 #include "theme.h"
 #include <QAction>
 #include <QApplication>
+#include <QCloseEvent>
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMoveEvent>
 #include <QPainter>
 #include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QScreen>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QToolBar>
@@ -214,6 +219,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     // Window floor follows the two-row stack minimum plus chrome
     // (menu/toolbar/status) so dragging shut stops at two rows.
     setMinimumHeight(minimumSizeHint().height());
+    restoreGeometrySetting();
+    m_geomTimer.setSingleShot(true);
+    m_geomTimer.setInterval(1000);
+    connect(&m_geomTimer, &QTimer::timeout, this, &MainWindow::saveGeometrySetting);
 
     connect(&m_store, &CatalogStore::countsChanged, this, &MainWindow::onCounts);
     connect(&m_store, &CatalogStore::statusChanged, this, &MainWindow::onStatus);
@@ -276,6 +285,45 @@ void MainWindow::restoreToolbar() {
     m_sortBox->setCurrentIndex(idx >= 0 ? idx : 0);
     m_sortBox->blockSignals(false);
     onViewMode(s.viewMode != "list");
+}
+
+void MainWindow::restoreGeometrySetting() {
+    // Position + height persist across launches (width is fixed by the
+    // shell). A blob from a disconnected monitor falls back to centered
+    // on the primary screen instead of stranding the window off-screen.
+    QByteArray g = m_store.settings().windowGeometry;
+    if (g.isEmpty())
+        return;
+    restoreGeometry(g);
+    if (!QGuiApplication::screenAt(frameGeometry().center())) {
+        QRect avail = QGuiApplication::primaryScreen()->availableGeometry();
+        move(avail.center().x() - width() / 2, avail.center().y() - height() / 2);
+    }
+}
+
+void MainWindow::saveGeometrySetting() {
+    // Route through the store so the in-memory settings stay in sync:
+    // a later saveView (toolbar change) rewrites the file from them and
+    // would otherwise drop the geometry.
+    AppSettings s = m_store.settings();
+    s.windowGeometry = saveGeometry();
+    AppSettings::save(s);
+    m_store.setSettings(s);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    saveGeometrySetting();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::moveEvent(QMoveEvent *event) {
+    QMainWindow::moveEvent(event);
+    m_geomTimer.start();
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event) {
+    QMainWindow::resizeEvent(event);
+    m_geomTimer.start();
 }
 
 QString MainWindow::currentView() const {

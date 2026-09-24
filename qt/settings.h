@@ -3,6 +3,7 @@
 // app uses (identical keys), so the Qt build migrates seamlessly.
 // BrowseMode/SortOrder/ViewMode are Qt-only additions for toolbar state;
 // unknown keys are ignored by JSON readers that don't know them.
+#include <QByteArray>
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
@@ -35,6 +36,8 @@ struct AppSettings {
     int sortOrder = 0;       // toolbar sort: CatalogStore::Sort enum value (0-4)
     QString viewMode = "grid"; // toolbar view: "grid" | "list"
     bool checkForUpdates = true; // startup update check (opt-out in Settings)
+    QByteArray windowGeometry; // Qt saveGeometry blob (position + height;
+                               // width is fixed by the shell, empty = default)
 
     QString smbPassword(const QString &host) const;
     void setSmbPassword(const QString &host, const QString &pw);

@@ -9,6 +9,7 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
+#include <QTimer>
 
 class TileDelegate : public QStyledItemDelegate {
     Q_OBJECT
@@ -46,10 +47,17 @@ private slots:
     void onChangelog();
     void onOpenDataFolder();
     void showContextMenu(const QPoint &pos);
+    void saveGeometrySetting();
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
+    void moveEvent(QMoveEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     void refreshSortBox();
     void restoreToolbar();
+    void restoreGeometrySetting();
     QString currentView() const;
     void openDetail(int row);
     void openKoboFor(const BookItem &book);
@@ -73,4 +81,5 @@ private:
     DetailItem m_pendingDetail;
     bool m_detailLoading = false;
     bool m_koboActive = false;
+    QTimer m_geomTimer; // debounced geometry persist (no settings churn)
 };

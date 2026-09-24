@@ -60,6 +60,11 @@ private slots:
         s.checkForUpdates = false;
         QVERIFY(AppSettings::save(s));
         QVERIFY(!AppSettings::load().checkForUpdates);
+        // Window geometry round-trips (empty by default, opaque blob).
+        QVERIFY(AppSettings().windowGeometry.isEmpty());
+        s.windowGeometry = QByteArray("geom-blob");
+        QVERIFY(AppSettings::save(s));
+        QCOMPARE(AppSettings::load().windowGeometry, QByteArray("geom-blob"));
         // Out-of-range view state clamps back to fresh-start defaults.
         back.browseMode = 9;
         back.sortOrder = 9;
