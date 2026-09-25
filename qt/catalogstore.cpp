@@ -2,6 +2,7 @@
 #include "ffi.h"
 #include "ffijson.h"
 #include "kobojob.h"
+#include "version.h"
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -27,8 +28,10 @@ void trace(const QString &line) {
 }
 
 CatalogStore::CatalogStore(QObject *parent)
-    : QObject(parent), m_diskCache(DiskCoverCache::defaultRoot()) {
+    : QObject(parent), m_diskCache(DiskCoverCache::defaultRoot()),
+      m_log(ErrorLog::defaultRoot()) {
     m_settings = AppSettings::load();
+    m_log.logHeader(kCatalogVersion, m_settings);
     connect(&m_watcher, &QFutureWatcher<LoadResult>::finished, this, &CatalogStore::onLoaded);
     connect(&m_model, &BookModel::coverNeeded, this, &CatalogStore::onCoverNeeded);
 }
@@ -399,12 +402,18 @@ void CatalogStore::onLoadTimeout(int gen, const QString &kind) {
         emit statusChanged("Book detail timed out — try again", false, false);
         return;
     }
-    emit dbError("Library load timed out after 45s (the library may be unreachable).");
+    const QString msg =
+        "Could not reach the Calibre library (load timed out - the library may be unreachable).";
+    m_log.log("library", QString("kind=%1 gen=%2 ms=%3 :: %4")
+                               .arg(kind).arg(gen).arg(m_loadClock.elapsed()).arg(msg));
+    emit dbError(msg);
 }
 
 void CatalogStore::applyLoad(const LoadResult &r) {
     if (!r.error.isEmpty()) {
         trace(QString("applyLoad kind=%1 ERROR %2").arg(r.kind).arg(r.error.left(100)));
+        m_log.log("library", QString("kind=%1 gen=%2 ms=%3 :: %4")
+                                     .arg(r.kind).arg(r.gen).arg(m_loadClock.elapsed()).arg(r.error));
         emit dbError(r.error);
         return;
     }

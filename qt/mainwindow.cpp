@@ -496,9 +496,23 @@ void MainWindow::onLoading(bool loading) {
 void MainWindow::onDbError(const QString &message) {
     if (!m_store.settings().hasSource())
         return; // fresh start: silent, the empty page guides to Settings
+    if (m_dbErrorOpen)
+        return; // FFI error + watchdog share one dialog, never stacked
+    // Deferred: onLoaded emits this synchronously from the watcher's
+    // finished slot. Showing a modal dialog inline nests a modal event
+    // loop inside the load chain (beachball look + reentrant reload).
+    // Queue it so the load fully unwinds first.
+    QString msg = message;
+    m_dbErrorOpen = true;
+    QTimer::singleShot(0, this, [this, msg]() { showDbError(msg); });
+}
+
+void MainWindow::showDbError(const QString &message) {
     QMessageBox::StandardButton r = QMessageBox::warning(
-        this, "Calibre Database", message + "\n\nOpen Settings?",
+        this, "Calibre Database",
+        message + "\nDetails saved to errors.log in the data folder.\n\nOpen Settings?",
         QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+    m_dbErrorOpen = false;
     if (r == QMessageBox::Yes)
         onSettings();
     else if (r == QMessageBox::No)

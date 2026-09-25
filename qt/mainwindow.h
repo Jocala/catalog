@@ -39,6 +39,7 @@ private slots:
     void onStatus(const QString &text, bool kobo, bool ok);
     void onLoading(bool loading);
     void onDbError(const QString &message);
+    void showDbError(const QString &message);
     void onKoboOutcome(const QJsonObject &outcome);
     void onHandoffOffer(const QString &ip);
     void onDetailReady(const DetailItem &detail);
@@ -81,5 +82,6 @@ private:
     DetailItem m_pendingDetail;
     bool m_detailLoading = false;
     bool m_koboActive = false;
+    bool m_dbErrorOpen = false; // non-reentrant error dialog (load-chain guard)
     QTimer m_geomTimer; // debounced geometry persist (no settings churn)
 };

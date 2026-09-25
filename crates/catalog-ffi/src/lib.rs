@@ -124,8 +124,8 @@ fn open_db(
             // Hung TCP connect/read used to block the shell's Loading…
             // bar forever (15-min report on a fresh m1 install). Bound the
             // whole metadata.db fetch so doLoad always returns to the UI.
-            let b = runtime()
-                .block_on(async {
+            let fetch = || {
+                runtime().block_on(async {
                     match tokio::time::timeout(
                         std::time::Duration::from_secs(30),
                         src.read_db_bytes(),
@@ -135,10 +135,22 @@ fn open_db(
                         Ok(Ok(b)) => Ok(b),
                         Ok(Err(e)) => Err(e.to_string()),
                         Err(_) => Err(
-                            "network: timed out after 30s reading metadata.db (check host/share/path)".to_string(),
+                            "Could not reach the Calibre library (timed out reading metadata.db - check host/share/path)".to_string(),
                         ),
                     }
-                })?;
+                })
+            };
+            // One fresh retry on timeout: the first SMB operation of a
+            // process can stall with a healthy network and idle server
+            // (2026-09-25: fresh launch hung 30s, CLI seconds later took
+            // 5s). The timed-out attempt's backend is dropped, never
+            // pooled, so the retry dials a new session — same spirit as
+            // the first-SYN retry on the test path.
+            let b: Vec<u8> = match fetch() {
+                Ok(b) => b,
+                Err(e) if e.contains("timed out") => fetch()?,
+                Err(e) => return Err(e),
+            };
             if let Ok(mut cache) = CACHE
                 .get_or_init(|| DbCache::new(std::collections::HashMap::new()))
                 .lock()
@@ -385,8 +397,18 @@ pub extern "C" fn catalog_cover(
         let cfg: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
         let src = file_source(&cfg)?;
+        // Bound like the metadata fetch: a dead share must be a cover
+        // miss (re-demanded later), never an unbounded worker hang that
+        // exhausts the Qt thread pool behind the gallery.
         let data = runtime()
-            .block_on(covers::fetch_cover_cached(&src, &path))
+            .block_on(async {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    covers::fetch_cover_cached(&src, &path),
+                )
+                .await
+                .unwrap_or_default()
+            })
             .ok_or_else(|| "no cover".to_string())?;
         if max_w > 0 && max_h > 0 {
             covers::scale_cover(&data, max_w, max_h).ok_or_else(|| "bad image".to_string())

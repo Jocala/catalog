@@ -18,8 +18,13 @@ public:
     QString root() const { return m_root; }
 
 private:
-    void enforceCap();
+    qint64 enforceCap(); // scans dir, evicts oldest-first, returns new total
     QString m_root;
     qint64 m_max;
     QMutex m_gate;
+    // Running byte total: scan once to learn it, then track puts.
+    // enforceCap (the full dir scan) runs only when the tracked total
+    // exceeds the cap — per-put in the tiny-cap unit test, almost never
+    // in production (256MB cap). -1 = unknown, scan on next put.
+    qint64 m_approxTotal = -1;
 };

@@ -3,6 +3,7 @@
 // Modes mirror the other ports: Books / Authors / Series / Tags + drill-in.
 #include "bookmodel.h"
 #include "covercache.h"
+#include "errorlog.h"
 #include "models.h"
 #include "settings.h"
 #include <QElapsedTimer>
@@ -91,6 +92,7 @@ private:
 
     AppSettings m_settings;
     BookModel m_model;
+    ErrorLog m_log;
     Mode m_mode = Books;
     Sort m_sort = ByAuthor;
     bool m_loading = false;
