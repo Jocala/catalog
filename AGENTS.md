@@ -144,6 +144,14 @@ verify download URL(s) 200 with exact byte sizes.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
+- Catalog 1.02 REFRESH 2026-09-24 (no version change): live EXE
+  (15064972, md5 0910a378…) + TGZ (13198597, md5 5ed78c3a…) now carry
+  the 45s load watchdog (`9403f86`) + window geometry (`84dedfe`) +
+  lifecycle-only trace (`4e2a665`); staging commit `703ebf8`.
+  `version.txt`/`changelog.txt`/`index.html` untouched, so the in-app
+  updater does not prompt (same version string). Mac DMG is still the
+  pre-watchdog 1.02 build (Apple timestamp route blackholed 2026-09-24)
+  and needs its own refresh pass when signing works again.
 - Catalog 1.0 LIVE 2026-09-23: product page + Inno EXE (15437259) +
   signed/notarized DMG (40355051) + Linux TGZ (12674406); root index
   catalog card; `catalog/version.txt` + `catalog/changelog.txt`.
