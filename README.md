@@ -18,7 +18,7 @@ already on the device, or sync a missing one over with one click.
 ![Settings](https://www.jocala.com/catalog/images/catalog-settings.png)
 ![Search](https://www.jocala.com/catalog/images/catalog-search.png)
 
-## Get Catalog
+## Get Catalog v1.03
 
 Catalog is free for Windows, macOS, and Linux. No ads, no tracking. Just point Catalog at your Calibre library and start reading.
 
