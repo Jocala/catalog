@@ -168,6 +168,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_grid->setMouseTracking(true);
     m_grid->viewport()->setCursor(Qt::PointingHandCursor);
     m_grid->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_grid, &QListView::clicked, this, &MainWindow::onTileActivated);
     connect(m_grid, &QListView::activated, this, &MainWindow::onTileActivated);
     connect(m_grid, &QListView::customContextMenuRequested, this, &MainWindow::showContextMenu);
     m_list = new QListView(this);
@@ -178,6 +179,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_list->setItemDelegate(new ListDelegate(this));
     m_list->viewport()->setCursor(Qt::PointingHandCursor);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_list, &QListView::clicked, this, &MainWindow::onTileActivated);
     connect(m_list, &QListView::activated, this, &MainWindow::onTileActivated);
     connect(m_list, &QListView::customContextMenuRequested, this, &MainWindow::showContextMenu);
     m_emptyPage = new QWidget(this);
@@ -415,6 +417,9 @@ void MainWindow::onTileActivated(const QModelIndex &idx) {
 }
 
 void MainWindow::openDetail(int row) {
+    if (m_detailLoading)
+        return; // first click wins; a second row clicked mid-load is
+    // dropped instead of mixing its book with the in-flight detail.
     m_pendingBook = m_store.model()->bookAt(row);
     m_pendingRow = row;
     m_detailLoading = true;
