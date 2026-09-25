@@ -4,4 +4,4 @@
 // with CMake project(VERSION) and packaging/catalog.iss.in (#VERSION).
 #include <QString>
 
-const QString kCatalogVersion = "1.02";
+const QString kCatalogVersion = "1.03";
