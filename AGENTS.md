@@ -131,6 +131,18 @@ sftp is text-only, never binaries): `scp` installer(s) to
 labels; commit the working tree (message carries byte sizes);
 verify download URL(s) 200 with exact byte sizes.
 
+Go-live (trigger phrase: "go live", separate step after staging):
+per-product rsync from debian
+(`rsync -avz --chmod=F644,D755
+/zstore/source/www/jocala.com/catalog/
+jeff@jocala.com:/var/www/jocala.com/public_html/catalog/`);
+root `index.html` needs nothing (catalog card carries no version).
+Then GitHub: `git push github main`, tag `v<VERSION>` at the code
+commit, `gh release create` with the three installers attached
+(binaries ride releases, never the repo). Verify live URLs +
+sizes and `gh release view`. Flipping `version.txt` prompts all
+update-enabled installs at once — no staged rollout.
+
 - Inno AppId (generated 2026-09-21, keep stable across versions):
   `{E51EB7AD-FEFB-4F3E-BD2C-CA6F49DD4410}` (same AppId means the Qt
   installer replaces a WPF install — intended).
@@ -144,12 +156,11 @@ verify download URL(s) 200 with exact byte sizes.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
-- Catalog 1.03 STAGED 2026-09-25 (test site only): EXE 15077666
-  (md5 54a16ac2…) + DMG 41482635 signed/notarized/stapled (md5
-  11d85a98…) + TGZ 13205255 (md5 58168355…); single-click detail,
+- Catalog 1.03 LIVE 2026-09-25: EXE 15077666 + DMG 41482635
+  signed/notarized/stapled + TGZ 13205255; single-click detail,
   errors.log, de-hung dialogs, FFI timeout retry, 15s cover bound.
-  Staging commit `2babe21`. `version.txt`=1.03 so the in-app updater
-  will prompt once staged files go live (separate future step).
+  Staging commit `2babe21`; GitHub release `v1.03` (tag at `8278ec8`)
+  carries all three installers.
 - Catalog 1.02 REFRESH 2026-09-24 (no version change): live EXE
   (15064972, md5 0910a378…) + TGZ (13198597, md5 5ed78c3a…) + DMG
   (41458887, md5 d9f7ecf1…) now carry the 45s load watchdog
