@@ -144,6 +144,12 @@ verify download URL(s) 200 with exact byte sizes.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
+- Catalog 1.03 STAGED 2026-09-25 (test site only): EXE 15077666
+  (md5 54a16ac2…) + DMG 41482635 signed/notarized/stapled (md5
+  11d85a98…) + TGZ 13205255 (md5 58168355…); single-click detail,
+  errors.log, de-hung dialogs, FFI timeout retry, 15s cover bound.
+  Staging commit `2babe21`. `version.txt`=1.03 so the in-app updater
+  will prompt once staged files go live (separate future step).
 - Catalog 1.02 REFRESH 2026-09-24 (no version change): live EXE
   (15064972, md5 0910a378…) + TGZ (13198597, md5 5ed78c3a…) + DMG
   (41458887, md5 d9f7ecf1…) now carry the 45s load watchdog

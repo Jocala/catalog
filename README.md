@@ -24,9 +24,9 @@ Catalog is free for Windows, macOS, and Linux. No ads, no tracking. Just point C
 
 | Platform | Size | Download |
 |----------|------|----------|
-| Windows | 13 MB | [jocala-catalog.1.02.exe](https://www.jocala.com/catalog/jocala-catalog.1.02.exe) |
-| macOS | 34 MB | [jocala-catalog.1.02.dmg](https://www.jocala.com/catalog/jocala-catalog.1.02.dmg) |
-| Linux | 12 MB | [jocala-catalog.1.02.tar.gz](https://www.jocala.com/catalog/jocala-catalog.1.02.tar.gz) |
+| Windows | 15 MB | [jocala-catalog.1.03.exe](https://www.jocala.com/catalog/jocala-catalog.1.03.exe) |
+| macOS | 41 MB | [jocala-catalog.1.03.dmg](https://www.jocala.com/catalog/jocala-catalog.1.03.dmg) |
+| Linux | 13 MB | [jocala-catalog.1.03.tar.gz](https://www.jocala.com/catalog/jocala-catalog.1.03.tar.gz) |
 
 More at [jocala.com/catalog](https://www.jocala.com/catalog/) ·
 [Changelog](https://www.jocala.com/catalog/changelog.txt)
