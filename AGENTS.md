@@ -160,7 +160,8 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
-- Catalog 1.04 IN RELEASE (this commit): local `smb-metadata.db` copy
+- Catalog 1.04 LIVE 2026-09-26: EXE 16275573 + DMG 42724189
+  signed/notarized/stapled + TGZ 13930079; local `smb-metadata.db` copy
   (loads ~4s → ~1.5s, offline-stale fallback, Reload refreshes);
   toggle-gated fetch diagnostics (`catalog_last_diag`, per-attempt
   fetch/pool/chunk/copy split in `[diag]`); pool drops stale sessions
@@ -168,6 +169,9 @@ update-enabled installs at once — no staged rollout.
   key strips ephemeral flags; settings checkboxes stacked under Theme;
   help gains diagnostics reporting section. New-install defaults:
   update-check ON, diagnostic logging OFF (both pre-existing, verified).
+  Staging commit `0dff54d`; GitHub release `v1.04` (tag at `1637ab2`)
+  carries all three installers. m1 `/Applications/JocalaCatalog.app`
+  deployed + verified (1.04, Notarized Developer ID).
 - Catalog 1.03 LIVE 2026-09-25: EXE 15077666 + DMG 41482635
   signed/notarized/stapled + TGZ 13205255; single-click detail,
   errors.log, de-hung dialogs, FFI timeout retry, 15s cover bound.
