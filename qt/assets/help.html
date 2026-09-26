@@ -175,6 +175,11 @@ author, series + number, tags, publisher, ISBN, and description.</p>
       password; <b>Test</b> checks the SSH connection (Pass/Fail pill); the
       <b>🗑 trash</b> removes a row.</li>
   <li><b>Theme</b> — System, Light, or Dark. System follows the OS.</li>
+  <li><b>Check for updates at startup</b> — on for new installs; Catalog
+      checks for a new version at launch (silent unless one is ready).</li>
+  <li><b>Diagnostic logging</b> — off for new installs; when on, every
+      library load appends a timing line to <code>errors.log</code>
+      (see §10). Nothing extra is logged when it is off.</li>
   <li><b>Save / Cancel</b> — Save applies the settings, closes, and re-reads
       the library.</li>
 </ul>
@@ -228,6 +233,15 @@ author, series + number, tags, publisher, ISBN, and description.</p>
       the Calibre title/author so the match is exact.</li>
   <li><b>Database errors</b> — the error dialog offers Open Settings and
       Retry; a Calibre-side library repair fixes persistent cases.</li>
+  <li><b>Slow first loads</b> — the first load after setup or Reload reads
+      the whole library over the network; later loads reuse a local copy
+      (<code>smb-metadata.db</code> next to the covers cache) and are much
+      faster. Reload always fetches fresh.</li>
+  <li><b>Reporting a library problem</b> — turn on <b>Settings → General →
+      Diagnostic logging</b>, reproduce the slow load or error once, then
+      open <b>File → Open Data Folder</b> and attach <code>errors.log</code>.
+      It carries one timing line per load (fetch attempts, pool state, byte
+      counts — never passwords) plus the exact error text.</li>
 </ul>
 <hr>
 <p align="center"><b>Donations defray server costs and fund development.</b> Please consider helping out.</p>

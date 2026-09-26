@@ -18,15 +18,15 @@ already on the device, or sync a missing one over with one click.
 ![Settings](https://www.jocala.com/catalog/images/catalog-settings.png)
 ![Search](https://www.jocala.com/catalog/images/catalog-search.png)
 
-## Get Catalog v1.03
+## Get Catalog v1.04
 
 Catalog is free for Windows, macOS, and Linux. No ads, no tracking. Just point Catalog at your Calibre library and start reading.
 
 | Platform | Size | Download |
 |----------|------|----------|
-| Windows | 15 MB | [jocala-catalog.1.03.exe](https://www.jocala.com/catalog/jocala-catalog.1.03.exe) |
-| macOS | 41 MB | [jocala-catalog.1.03.dmg](https://www.jocala.com/catalog/jocala-catalog.1.03.dmg) |
-| Linux | 13 MB | [jocala-catalog.1.03.tar.gz](https://www.jocala.com/catalog/jocala-catalog.1.03.tar.gz) |
+| Windows | TBD | [jocala-catalog.1.04.exe](https://www.jocala.com/catalog/jocala-catalog.1.04.exe) |
+| macOS | TBD | [jocala-catalog.1.04.dmg](https://www.jocala.com/catalog/jocala-catalog.1.04.dmg) |
+| Linux | TBD | [jocala-catalog.1.04.tar.gz](https://www.jocala.com/catalog/jocala-catalog.1.04.tar.gz) |
 
 More at [jocala.com/catalog](https://www.jocala.com/catalog/) ·
 [Changelog](https://www.jocala.com/catalog/changelog.txt)

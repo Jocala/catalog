@@ -60,6 +60,11 @@ private slots:
         s.checkForUpdates = false;
         QVERIFY(AppSettings::save(s));
         QVERIFY(!AppSettings::load().checkForUpdates);
+        // Diagnostic logging persists; fresh installs default to off.
+        QVERIFY(!AppSettings().diagLogging);
+        s.diagLogging = true;
+        QVERIFY(AppSettings::save(s));
+        QVERIFY(AppSettings::load().diagLogging);
         // Window geometry round-trips (empty by default, opaque blob).
         QVERIFY(AppSettings().windowGeometry.isEmpty());
         s.windowGeometry = QByteArray("geom-blob");
