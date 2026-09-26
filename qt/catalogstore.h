@@ -109,6 +109,13 @@ private:
         qint64 chunksTotal = 0;
         qint64 fetch1ChunksDone = 0;
         qint64 fetch1ChunksTotal = 0;
+        // Local-copy accounting: served from smb-metadata.db without
+        // SMB (hit), or stale copy after a failed fetch. Age is
+        // informational — validity is existence; Reload refreshes.
+        bool copyHit = false;
+        bool copyStale = false;
+        qint64 copyMs = 0;
+        qint64 copyAgeSecs = 0;
         bool fresh = false; // Reload bypass of the FFI metadata cache
         bool diag = false;  // extended fetch timings requested
     };

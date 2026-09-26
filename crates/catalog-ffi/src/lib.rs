@@ -173,14 +173,17 @@ fn open_db(
             // `diag` is set; off-mode keeps today's generic message.
             //
             // Attempt outcome: Ok(bytes) / Err(message) plus attempt
-            // timing. The 30s bound wraps the fetch future itself (as
-            // before); `progress` survives a timeout because it lives in
-            // the outer block, so even a hard stall reports how far the
-            // attempt got (session acquired? read started?).
+            // timing and copy accounting. The 30s bound wraps the fetch
+            // future itself (as before); `progress` survives a timeout
+            // because it lives in the outer block, so even a hard stall
+            // reports how far the attempt got (session acquired? which
+            // chunk?). Copy reads are local and fast — only the live
+            // fetch can burn the bound.
             let fetch = || -> (
                 Result<Vec<u8>, String>,
                 u64,
                 catalog_core::smb::SmbFetchDiag,
+                catalog_core::db::CopyState,
             ) {
                 runtime().block_on(async {
                     let progress =
@@ -188,19 +191,49 @@ fn open_db(
                     let t = std::time::Instant::now();
                     let res = tokio::time::timeout(
                         std::time::Duration::from_secs(30),
-                        src.read_db_bytes_with_progress(&progress),
+                        src.read_db_bytes_cached(fresh, &progress),
                     )
                     .await;
                     let ms = t.elapsed().as_millis() as u64;
                     match res {
-                        Ok((Ok(b), d)) => (Ok(b), ms, d),
-                        Ok((Err(e), d)) => (Err(e.to_string()), ms, d),
+                        Ok(out) => {
+                            let bytes = out.result.map_err(|e| e.to_string());
+                            (bytes, ms, out.smb, out.copy)
+                        }
                         Err(_) => {
+                            // Hard stall: the future was dropped mid-fetch.
+                            // Non-forced loads tolerate staleness — serve
+                            // any copy rather than fail outright.
                             let partial = progress
                                 .lock()
                                 .map(|g| g.clone())
                                 .unwrap_or_default();
-                            (Err("timed out".to_string()), ms.max(30_000), partial)
+                            if !fresh {
+                                let path =
+                                    catalog_core::db::FileSource::metadata_copy_path(
+                                        src.is_local(),
+                                    );
+                                if let Ok(b) = std::fs::read(&path) {
+                                    if !b.is_empty() {
+                                        let copy = catalog_core::db::CopyState {
+                                            stale_fallback: true,
+                                            ..Default::default()
+                                        };
+                                        return (
+                                            Ok(b),
+                                            ms.max(30_000),
+                                            partial,
+                                            copy,
+                                        );
+                                    }
+                                }
+                            }
+                            (
+                                Err("timed out".to_string()),
+                                ms.max(30_000),
+                                partial,
+                                catalog_core::db::CopyState::default(),
+                            )
                         }
                     }
                 })
@@ -212,32 +245,53 @@ fn open_db(
             // pooled, so the retry dials a new session — same spirit as
             // the first-SYN retry on the test path.
             let (first, first_ms, first_diag) = match fetch() {
-                (Ok(b), ms, d) => {
-                    let diag = diag_json(1, ms, 0, &d, &d);
+                (Ok(b), ms, d, c) => {
+                    let diag = diag_json(1, ms, 0, &d, &d, &c);
                     (Ok(b), ms, diag)
                 }
-                (Err(e), ms, first_smb) if e.contains("timed out") => {
-                    let (second, second_ms, second_diag) = fetch();
+                (Err(e), ms, first_smb, _first_copy) if e.contains("timed out") => {
+                    let (second, second_ms, second_diag, second_copy) = fetch();
                     match second {
                         Ok(b) => {
-                            let diag = diag_json(2, ms, second_ms, &second_diag, &first_smb);
+                            let diag = diag_json(
+                                2,
+                                ms,
+                                second_ms,
+                                &second_diag,
+                                &first_smb,
+                                &second_copy,
+                            );
                             (Ok(b), second_ms, diag)
                         }
                         Err(e2) if e2.contains("timed out") => {
                             let msg = timeout_message(diag_on, 2, ms, second_ms, &second_diag);
-                            let diag = diag_json(2, ms, second_ms, &second_diag, &first_smb);
+                            let diag = diag_json(
+                                2,
+                                ms,
+                                second_ms,
+                                &second_diag,
+                                &first_smb,
+                                &second_copy,
+                            );
                             (Err(msg), second_ms, diag)
                         }
                         // Retry surfaced a different (real) error — pass
                         // it through unchanged, exactly as before.
                         Err(e2) => {
-                            let diag = diag_json(2, ms, second_ms, &second_diag, &first_smb);
+                            let diag = diag_json(
+                                2,
+                                ms,
+                                second_ms,
+                                &second_diag,
+                                &first_smb,
+                                &second_copy,
+                            );
                             (Err(e2), second_ms, diag)
                         }
                     }
                 }
-                (Err(e), ms, d) => {
-                    let diag = diag_json(1, ms, 0, &d, &d);
+                (Err(e), ms, d, c) => {
+                    let diag = diag_json(1, ms, 0, &d, &d, &c);
                     (Err(e), ms, diag)
                 }
             };
@@ -314,15 +368,17 @@ fn timeout_message(
 }
 
 /// Diag JSON for `catalog_last_diag`: millis, attempts, pool hit/miss,
-/// byte size (filled by the caller once known). `first` is the attempt-1
-/// SMB split (the interesting one on a stall); top-level pool/connect/
-/// read describe the decisive attempt. Never config values.
+/// copy accounting, byte size (filled by the caller once known).
+/// `first` is the attempt-1 SMB split (the interesting one on a stall);
+/// top-level pool/connect/read describe the decisive attempt. Never
+/// config values.
 fn diag_json(
     attempts: u32,
     fetch1_ms: u64,
     fetch2_ms: u64,
     smb: &catalog_core::smb::SmbFetchDiag,
     first: &catalog_core::smb::SmbFetchDiag,
+    copy: &catalog_core::db::CopyState,
 ) -> serde_json::Value {
     fn pool_name(hit: Option<bool>) -> &'static str {
         match hit {
@@ -347,6 +403,10 @@ fn diag_json(
         "evict_n": smb.evict_n,
         "chunks_done": smb.chunks_done,
         "chunks_total": smb.chunks_total,
+        "copy_hit": copy.served_from_copy,
+        "copy_stale": copy.stale_fallback,
+        "copy_ms": copy.copy_ms,
+        "copy_age_secs": copy.copy_age_secs,
         "bytes": smb.bytes,
         "open_ms": 0,
         "query_ms": 0,
@@ -373,6 +433,10 @@ fn cached_diag(bytes: u64, open_ms: u64) -> serde_json::Value {
         "evict_n": 0,
         "chunks_done": 0,
         "chunks_total": 0,
+        "copy_hit": false,
+        "copy_stale": false,
+        "copy_ms": 0,
+        "copy_age_secs": 0,
         "bytes": bytes,
         "open_ms": open_ms,
         "query_ms": 0,
@@ -970,7 +1034,12 @@ mod tests {
             chunks_done: 44,
             chunks_total: 44,
         };
-        let v = diag_json(2, 30000, 3456, &d, &d);
+        let c = catalog_core::db::CopyState {
+            served_from_copy: true,
+            copy_ms: 3,
+            ..Default::default()
+        };
+        let v = diag_json(2, 30000, 3456, &d, &d, &c);
         // Exact key set: ints + pool state only, never config values.
         let mut keys: Vec<String> = v
             .as_object()
@@ -988,6 +1057,10 @@ mod tests {
                 "chunks_done",
                 "chunks_total",
                 "connect_ms",
+                "copy_age_secs",
+                "copy_hit",
+                "copy_ms",
+                "copy_stale",
                 "evict_n",
                 "fetch1_chunks_done",
                 "fetch1_chunks_total",
@@ -1008,6 +1081,8 @@ mod tests {
         assert_eq!(v["bytes"], 42000000);
         assert_eq!(v["evict_n"], 2);
         assert_eq!(v["cached"], false);
+        assert_eq!(v["copy_hit"], true);
+        assert_eq!(v["copy_ms"], 3);
     }
 
     #[test]

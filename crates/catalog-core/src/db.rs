@@ -299,6 +299,138 @@ impl FileSource {
         }
     }
 
+    /// Local metadata.db snapshot ("the copy"): one slot per source kind
+    /// in the platform data dir (`smb-metadata.db`; local sources read
+    /// direct and never copy). Policy is explicit, never timed: the copy
+    /// is written at setup (Save→Reload), at startup when missing, and
+    /// on every Reload. A load serves the copy whenever it exists —
+    /// Reload is the only refresh. Created on first use.
+    pub fn metadata_copy_path(is_local: bool) -> PathBuf {
+        let name = if is_local {
+            "local-metadata.db"
+        } else {
+            "smb-metadata.db"
+        };
+        crate::settings::base_dir().join(name)
+    }
+
+    /// Read a copy file at an explicit path (unit-testable core of the
+    /// serve step): `Some((bytes, age_secs))` when present and non-empty,
+    /// else `None`. Age is informational only — validity is existence.
+    pub fn read_copy_file(path: &std::path::Path) -> Option<(Vec<u8>, u64)> {
+        let b = std::fs::read(path).ok()?;
+        if b.is_empty() {
+            return None;
+        }
+        let age = std::fs::metadata(path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| std::time::SystemTime::now().duration_since(t).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(u64::MAX);
+        Some((b, age))
+    }
+
+    /// Best-effort atomic replace of the copy (temp + rename in the same
+    /// dir). Failures are ignored — the copy is an accelerator, and the
+    /// fetched bytes are returned regardless.
+    pub fn store_copy(path: &std::path::Path, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let tmp = path.with_extension(format!(
+            "tmp-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0)
+        ));
+        if std::fs::write(&tmp, bytes).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        } else {
+            let _ = std::fs::remove_file(&tmp);
+        }
+    }
+
+    /// Serve the copy whenever it exists (no SMB), else fetch live and
+    /// write the copy. SMB only: local sources read direct (a same-disk
+    /// copy buys nothing). Non-forced loads tolerate staleness: a failed
+    /// fetch falls back to any existing copy; forced loads (Reload)
+    /// surface errors so the user gets truth on demand.
+    pub async fn read_db_bytes_cached(
+        &self,
+        force_refresh: bool,
+        progress: &std::sync::Mutex<crate::smb::SmbFetchDiag>,
+    ) -> FetchOutcome {
+        if self.is_local() {
+            let (result, smb) = self.read_db_bytes_with_progress(progress).await;
+            return FetchOutcome {
+                result,
+                copy: CopyState::default(),
+                smb,
+            };
+        }
+        let path = Self::metadata_copy_path(false);
+        if !force_refresh {
+            let t = std::time::Instant::now();
+            if let Some((b, age)) = Self::read_copy_file(&path) {
+                let copy = CopyState {
+                    served_from_copy: true,
+                    copy_ms: t.elapsed().as_millis() as u64,
+                    copy_age_secs: age,
+                    ..Default::default()
+                };
+                return FetchOutcome {
+                    result: Ok(b),
+                    copy,
+                    smb: crate::smb::SmbFetchDiag::default(),
+                };
+            }
+            // Missing/unreadable copy: fall through to a live fetch.
+        }
+        let (res, smb) = self.read_db_bytes_with_progress(progress).await;
+        match res {
+            Ok(b) => {
+                Self::store_copy(&path, &b);
+                FetchOutcome {
+                    result: Ok(b),
+                    copy: CopyState {
+                        refreshed: true,
+                        ..Default::default()
+                    },
+                    smb,
+                }
+            }
+            Err(e) => {
+                if !force_refresh {
+                    let t = std::time::Instant::now();
+                    if let Some((b, age)) = Self::read_copy_file(&path) {
+                        let copy = CopyState {
+                            stale_fallback: true,
+                            copy_ms: t.elapsed().as_millis() as u64,
+                            copy_age_secs: age,
+                            ..Default::default()
+                        };
+                        return FetchOutcome {
+                            result: Ok(b),
+                            copy,
+                            smb,
+                        };
+                    }
+                }
+                FetchOutcome {
+                    result: Err(e),
+                    copy: CopyState::default(),
+                    smb,
+                }
+            }
+        }
+    }
+
     /// List a directory: local folder or share-relative path ("" = root).
     pub async fn list_dir(&self, rel: &str) -> Result<Vec<DirEntry>, CatalogDbError> {
         match self {
@@ -366,6 +498,27 @@ impl FileSource {
             }
         }
     }
+}
+
+/// Copy-serve outcome: what the bytes are plus how they were obtained
+/// (all ints/bools — safe for the fetch diag).
+#[derive(Debug, Clone, Default)]
+pub struct CopyState {
+    pub served_from_copy: bool,
+    pub stale_fallback: bool,
+    pub refreshed: bool,
+    pub copy_ms: u64,
+    /// Copy age in seconds at serve time (informational — validity is
+    /// existence; Reload is the only refresh).
+    pub copy_age_secs: u64,
+}
+
+/// One metadata fetch through the copy layer: live result (or stale
+/// fallback), copy accounting, and the SMB stage split.
+pub struct FetchOutcome {
+    pub result: Result<Vec<u8>, CatalogDbError>,
+    pub copy: CopyState,
+    pub smb: crate::smb::SmbFetchDiag,
 }
 
 /// Open raw `metadata.db` bytes as an in-memory rusqlite connection.
@@ -933,5 +1086,74 @@ mod tests {
     #[test]
     fn html_strip_mirrors_swift() {
         assert_eq!(strip_calibre_html("<p>Hi &amp; bye</p>"), "Hi & bye");
+    }
+
+    fn test_copy_path() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "catalog-copy-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0)
+        ));
+        dir.join("smb-metadata.db")
+    }
+
+    #[test]
+    fn copy_serve_policy_is_existence() {
+        // Missing copy never serves.
+        let missing = test_copy_path();
+        assert!(FileSource::read_copy_file(&missing).is_none());
+        // Empty file never serves (would poison open with "empty file").
+        let path = test_copy_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, []).unwrap();
+        assert!(FileSource::read_copy_file(&path).is_none());
+        // Present copy serves with its bytes and a sane age, no matter
+        // how old (validity is existence; Reload is the only refresh).
+        let bytes = vec![7u8; 1024];
+        std::fs::write(&path, &bytes).unwrap();
+        let (back, age) = FileSource::read_copy_file(&path).unwrap();
+        assert_eq!(back, bytes);
+        assert!(age < 60);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn copy_store_roundtrip_is_atomic() {
+        let dir = std::env::temp_dir().join(format!(
+            "catalog-copy-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0)
+        ));
+        let path = dir.join("smb-metadata.db");
+        // Empty bytes never create a copy (an empty copy would poison
+        // every later serve with an "empty file" open failure).
+        FileSource::store_copy(&path, &[]);
+        assert!(!path.exists());
+        let bytes = vec![7u8; 1024];
+        FileSource::store_copy(&path, &bytes);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        // No temp debris left behind.
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copy_paths_split_by_source_kind() {
+        assert_ne!(
+            FileSource::metadata_copy_path(true),
+            FileSource::metadata_copy_path(false)
+        );
+        assert!(FileSource::metadata_copy_path(true)
+            .to_string_lossy()
+            .contains("local-metadata.db"));
+        assert!(FileSource::metadata_copy_path(false)
+            .to_string_lossy()
+            .contains("smb-metadata.db"));
     }
 }

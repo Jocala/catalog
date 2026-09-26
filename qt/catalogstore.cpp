@@ -401,6 +401,10 @@ CatalogStore::LoadResult CatalogStore::doLoad(QString cfg, QString kind, QString
             r.chunksTotal = (qint64)d.value("chunks_total").toDouble(0);
             r.fetch1ChunksDone = (qint64)d.value("fetch1_chunks_done").toDouble(0);
             r.fetch1ChunksTotal = (qint64)d.value("fetch1_chunks_total").toDouble(0);
+            r.copyHit = d.value("copy_hit").toBool(false);
+            r.copyStale = d.value("copy_stale").toBool(false);
+            r.copyMs = (qint64)d.value("copy_ms").toDouble(0);
+            r.copyAgeSecs = (qint64)d.value("copy_age_secs").toDouble(0);
         }
     }
     if (!raw) {
@@ -450,7 +454,7 @@ void CatalogStore::onLoaded() {
                           .arg(totalMs)
                           .arg(rows);
         if (r.diag) {
-            msg += QString(" fetch1_ms=%1 fetch2_ms=%2 open_ms=%3 query_ms=%4 attempts=%5 pooled=%6 bytes=%7 cached=%8 evict_n=%9 fetch1_pooled=%10 fetch1_conn=%11 fetch1_read=%12 fetch1_evict=%13 chunks=%14/%15 fetch1_chunks=%16/%17")
+            msg += QString(" fetch1_ms=%1 fetch2_ms=%2 open_ms=%3 query_ms=%4 attempts=%5 pooled=%6 bytes=%7 cached=%8 evict_n=%9 fetch1_pooled=%10 fetch1_conn=%11 fetch1_read=%12 fetch1_evict=%13 chunks=%14/%15 fetch1_chunks=%16/%17 copy_hit=%18 copy_stale=%19 copy_ms=%20 copy_age=%21")
                        .arg(r.fetch1Ms)
                        .arg(r.fetch2Ms)
                        .arg(r.openMs)
@@ -467,7 +471,11 @@ void CatalogStore::onLoaded() {
                        .arg(r.chunksDone)
                        .arg(r.chunksTotal)
                        .arg(r.fetch1ChunksDone)
-                       .arg(r.fetch1ChunksTotal);
+                       .arg(r.fetch1ChunksTotal)
+                       .arg(r.copyHit ? 1 : 0)
+                       .arg(r.copyStale ? 1 : 0)
+                       .arg(r.copyMs)
+                       .arg(r.copyAgeSecs);
         }
         if (!r.error.isEmpty())
             msg += " error=" + r.error.left(160);

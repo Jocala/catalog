@@ -547,6 +547,17 @@ fn note(
     }
 }
 
+/// Fold mirrored chunk progress back into the returned diag (the live
+/// struct only sees chunk counts via the progress handle).
+fn snapshot_chunks(progress: Option<&std::sync::Mutex<SmbFetchDiag>>, diag: &mut SmbFetchDiag) {
+    if let Some(m) = progress {
+        if let Ok(g) = m.lock() {
+            diag.chunks_done = g.chunks_done;
+            diag.chunks_total = g.chunks_total;
+        }
+    }
+}
+
 /// Generic remote-file download with retry (covers, epubs, …).
 /// Sessions are pooled: repeat reads reuse the authenticated share
 /// session instead of paying TCP + NTLM per file (the gallery-cover lag
@@ -755,6 +766,7 @@ async fn pooled_download_diag(
                     d.read_ms = snapshot.read_ms;
                     d.bytes = snapshot.bytes;
                 });
+                snapshot_chunks(progress, &mut diag);
                 return (Ok(d), diag);
             }
             Ok(_) => {
@@ -780,6 +792,7 @@ async fn pooled_download_diag(
     // give up. Auth failures never retry (no poison, nothing cached).
     // Empty file is a content answer, not a transport failure.
     if last == "empty file" {
+        snapshot_chunks(progress, &mut diag);
         return (Err(SmbError::NotFound(last)), diag);
     }
     if SmbClient::<SmbCrateBackend>::should_retry("download", &last) {
@@ -805,6 +818,7 @@ async fn pooled_download_diag(
                             d.read_ms = snapshot.read_ms;
                             d.bytes = snapshot.bytes;
                         });
+                        snapshot_chunks(progress, &mut diag);
                         return (Ok(d), diag);
                     }
                     Ok(_) => last = "empty file".to_string(),
@@ -821,6 +835,7 @@ async fn pooled_download_diag(
             }
         }
     }
+    snapshot_chunks(progress, &mut diag);
     (Err(classify_error(&last)), diag)
 }
 
