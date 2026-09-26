@@ -73,10 +73,12 @@ bool AppSettings::hasSource() const {
     return !servers.isEmpty() && !servers.first().host.trimmed().isEmpty();
 }
 
-QString AppSettings::libraryConfigJson(bool fresh) const {
+QString AppSettings::libraryConfigJson(bool fresh, bool diag) const {
     QJsonObject o;
     if (fresh)
         o.insert("fresh", "1");
+    if (diag)
+        o.insert("diag", "1");
     if (librarySource == "local") {
         o.insert("source", "local");
         o.insert("local_dir", localDir);
@@ -143,6 +145,7 @@ AppSettings AppSettings::load() {
     if (s.viewMode != "grid" && s.viewMode != "list")
         s.viewMode = "grid";
     s.checkForUpdates = o.value("CheckForUpdates").toBool(true);
+    s.diagLogging = o.value("DiagLogging").toBool(false);
     s.windowGeometry = QByteArray::fromBase64(o.value("WindowGeometry").toString().toLatin1());
     return s;
 }
@@ -183,6 +186,7 @@ bool AppSettings::save(const AppSettings &s) {
     o.insert("SortOrder", s.sortOrder);
     o.insert("ViewMode", s.viewMode);
     o.insert("CheckForUpdates", s.checkForUpdates);
+    o.insert("DiagLogging", s.diagLogging);
     o.insert("WindowGeometry", QString::fromLatin1(s.windowGeometry.toBase64()));
     QFile f(settingsPath());
     QDir().mkpath(QFileInfo(f).absolutePath());

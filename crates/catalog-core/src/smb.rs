@@ -314,6 +314,89 @@ impl SmbCrateBackend {
     async fn tree_share(&mut self) -> Result<String, String> {
         self.share.clone().ok_or_else(|| "not connected: connect_share first".to_string())
     }
+
+    /// Chunked read with per-chunk progress (chunks done/total mirrored
+    /// so an outer timeout can tell "wedged before the first byte" from
+    /// "crawling mid-stream"). Returns the bytes plus chunks completed.
+    /// Each chunk carries its own 10s bound (a healthy chunk takes
+    /// ~60ms); a stalled chunk fails the attempt instead of burning the
+    /// whole outer fetch budget.
+    async fn read_file_shared_progress(
+        &mut self,
+        path: &str,
+        progress: Option<&std::sync::Mutex<SmbFetchDiag>>,
+    ) -> (Result<Vec<u8>, String>, u64) {
+        use smb::{GetLen, ReadAt};
+        let share = match self.tree_share().await {
+            Ok(s) => s,
+            Err(e) => return (Err(e), 0),
+        };
+        let unc = match self.unc(&share, path) {
+            Ok(u) => u,
+            Err(e) => return (Err(e), 0),
+        };
+        let client = match self.ensure_client().await {
+            Ok(c) => c,
+            Err(e) => return (Err(e), 0),
+        };
+        let args = smb::FileCreateArgs::make_open_existing(
+            smb::FileAccessMask::new().with_generic_read(true),
+        );
+        let file = match client.create_file(&unc, &args).await.map_err(smb_err) {
+            Ok(smb::Resource::File(f)) => f,
+            Ok(_) => return (Err("not a file".to_string()), 0),
+            Err(e) => return (Err(e), 0),
+        };
+        let len = match file.get_len().await.map_err(smb_err) {
+            Ok(l) => l,
+            Err(e) => return (Err(e), 0),
+        };
+        const CHUNK: u64 = 1 << 20;
+        const CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+        let total = len.div_ceil(CHUNK);
+        let mut out = Vec::with_capacity(len.min(256 << 20) as usize);
+        let mut off = 0u64;
+        let mut done = 0u64;
+        while off < len {
+            let n = CHUNK.min(len - off) as usize;
+            let mut buf = vec![0u8; n];
+            let read = match tokio::time::timeout(CHUNK_TIMEOUT, file.read_at(&mut buf, off)).await
+            {
+                Ok(Ok(r)) => r,
+                Ok(Err(e)) => return (Err(smb_err(e)), done),
+                Err(_) => {
+                    return (
+                        Err(format!(
+                            "chunk read timed out after 10s (chunk {}/{}, {} bytes)",
+                            done + 1,
+                            total,
+                            len
+                        )),
+                        done,
+                    )
+                }
+            };
+            if read == 0 {
+                break;
+            }
+            buf.truncate(read);
+            out.extend_from_slice(&buf);
+            off += read as u64;
+            done += 1;
+            note(progress, |d| {
+                d.chunks_done = done;
+                d.chunks_total = total;
+            });
+        }
+        if let Err(e) = file.close().await.map_err(smb_err) {
+            return (Err(e), done);
+        }
+        note(progress, |d| {
+            d.chunks_done = done;
+            d.chunks_total = total;
+        });
+        (Ok(out), done)
+    }
 }
 
 #[async_trait::async_trait]
@@ -399,35 +482,13 @@ impl SmbBackend for SmbCrateBackend {
     /// mode is full sharing, unlike the old vendored FileReader which
     /// opened share-read-only and hit violations on Calibre-locked files).
     /// Chunked 1 MiB ranged reads; the wrapper retries violations.
+    /// Each chunk carries its own 10s bound (same philosophy as the
+    /// crate's per-leg timeout; a healthy chunk takes ~60ms): a stalled
+    /// chunk fails the attempt at ~10s instead of burning the whole
+    /// outer fetch budget, and the message keeps the "timed out" marker
+    /// so the fetch-level fresh retry still triggers.
     async fn read_file_shared(&mut self, path: &str) -> Result<Vec<u8>, String> {
-        use smb::{GetLen, ReadAt};
-        let share = self.tree_share().await?;
-        let unc = self.unc(&share, path)?;
-        let client = self.ensure_client().await?;
-        let args = smb::FileCreateArgs::make_open_existing(
-            smb::FileAccessMask::new().with_generic_read(true),
-        );
-        let file = match client.create_file(&unc, &args).await.map_err(smb_err)? {
-            smb::Resource::File(f) => f,
-            _ => return Err("not a file".to_string()),
-        };
-        let len = file.get_len().await.map_err(smb_err)?;
-        const CHUNK: u64 = 1 << 20;
-        let mut out = Vec::with_capacity(len.min(256 << 20) as usize);
-        let mut off = 0u64;
-        while off < len {
-            let n = CHUNK.min(len - off) as usize;
-            let mut buf = vec![0u8; n];
-            let read = file.read_at(&mut buf, off).await.map_err(smb_err)?;
-            if read == 0 {
-                break;
-            }
-            buf.truncate(read);
-            out.extend_from_slice(&buf);
-            off += read as u64;
-        }
-        file.close().await.map_err(smb_err)?;
-        Ok(out)
+        self.read_file_shared_progress(path, None).await.0
     }
 
     async fn logoff(&mut self) -> Result<(), String> {
@@ -446,7 +507,44 @@ pub async fn download_db_bytes(
     share: &str,
     remote_path: &str,
 ) -> Result<Vec<u8>, SmbError> {
-    download_file_bytes(conn, share, remote_path).await
+    download_db_bytes_with_diag(conn, share, remote_path)
+        .await
+        .0
+}
+
+/// Metadata fetch with per-stage timing. Clocks are cheap `Instant`s;
+/// the caller decides whether to surface the diag (gated by `diag`).
+pub async fn download_db_bytes_with_diag(
+    conn: SmbConn,
+    share: &str,
+    remote_path: &str,
+) -> (Result<Vec<u8>, SmbError>, SmbFetchDiag) {
+    let progress = std::sync::Mutex::new(SmbFetchDiag::default());
+    download_db_bytes_with_progress(conn, share, remote_path, &progress).await
+}
+
+/// Same fetch, but stage progress is mirrored into `progress` as it
+/// happens — so a caller that times the future out still learns whether
+/// the stall was in session acquisition or the read.
+pub async fn download_db_bytes_with_progress(
+    conn: SmbConn,
+    share: &str,
+    remote_path: &str,
+    progress: &std::sync::Mutex<SmbFetchDiag>,
+) -> (Result<Vec<u8>, SmbError>, SmbFetchDiag) {
+    pooled_download_diag(&conn, share, remote_path, Some(progress)).await
+}
+
+/// Publish a stage update to the caller's progress handle (if any).
+fn note(
+    progress: Option<&std::sync::Mutex<SmbFetchDiag>>,
+    f: impl FnOnce(&mut SmbFetchDiag),
+) {
+    if let Some(m) = progress {
+        if let Ok(mut g) = m.lock() {
+            f(&mut g);
+        }
+    }
 }
 
 /// Generic remote-file download with retry (covers, epubs, …).
@@ -529,7 +627,30 @@ fn keep_entry(last_used: std::time::Instant, now: std::time::Instant, kept: usiz
     now.duration_since(last_used).as_secs() < POOL_IDLE_SECS && kept < POOL_MAX_IDLE
 }
 
-async fn checkout(key: &PoolKey, conn: &SmbConn, share: &str) -> Result<SmbCrateBackend, SmbError> {
+/// Per-fetch SMB timing (no secrets: booleans + millis + byte count only).
+/// Built on every metadata fetch; only surfaced to the shell when the
+/// `diag` config flag is set (Settings → Diagnostic logging).
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct SmbFetchDiag {
+    pub pooled_hit: Option<bool>,
+    pub connect_ms: u64,
+    pub read_ms: u64,
+    pub bytes: u64,
+    /// Stale sessions dropped at checkout (never awaited — see below).
+    pub evict_n: u32,
+    /// Chunk progress of the read (1 MiB chunks): completed / total.
+    pub chunks_done: u64,
+    pub chunks_total: u64,
+}
+
+/// Checkout outcome: backend + pool-hit flag + stale sessions dropped.
+pub struct Checkout {
+    pub backend: SmbCrateBackend,
+    pub pooled_hit: bool,
+    pub evicted: u32,
+}
+
+async fn checkout(key: &PoolKey, conn: &SmbConn, share: &str) -> Result<Checkout, SmbError> {
     let now = std::time::Instant::now();
     let mut evicted: Vec<PooledSession> = Vec::new();
     let hit = {
@@ -551,13 +672,18 @@ async fn checkout(key: &PoolKey, conn: &SmbConn, share: &str) -> Result<SmbCrate
         }
         hit
     };
-    // Graceful logoff outside the lock; failures mean the session was
-    // already dead, which is exactly why it was evicted.
-    for mut e in evicted {
-        let _ = e.backend.logoff().await;
-    }
+    // Stale sessions are DROPPED, never gracefully logged off: each
+    // logoff leg (tree disconnect, session logoff, connection close)
+    // waits out the crate's ~10s read timeout on a dead TCP, so saying
+    // goodbye to N stale sessions could burn tens of seconds of the
+    // fetch budget before the real work starts (the 30s-stall shape).
+    // Socket close still sends FIN, so the server reaps promptly; this
+    // matches the over-cap checkin path, which already drops. Count the
+    // evictions for the fetch diag.
+    let evicted_n = evicted.len() as u32;
+    drop(evicted);
     if let Some(e) = hit {
-        return Ok(e.backend);
+        return Ok(Checkout { backend: e.backend, pooled_hit: true, evicted: evicted_n });
     }
     // Miss: fresh login + share connect (SmbClient retry rules intact).
     let mut client = SmbClient::new(SmbCrateBackend::new(conn.clone()));
@@ -565,7 +691,7 @@ async fn checkout(key: &PoolKey, conn: &SmbConn, share: &str) -> Result<SmbCrate
         .login_params(&conn.user, &conn.password, &conn.domain)
         .await?;
     client.connect_share_retry("pooled", share).await?;
-    Ok(client.into_backend())
+    Ok(Checkout { backend: client.into_backend(), pooled_hit: false, evicted: evicted_n })
 }
 
 async fn checkin(key: PoolKey, backend: SmbCrateBackend) {
@@ -582,15 +708,54 @@ async fn pooled_download(
     share: &str,
     remote_path: &str,
 ) -> Result<Vec<u8>, SmbError> {
+    pooled_download_diag(conn, share, remote_path, None).await.0
+}
+
+async fn pooled_download_diag(
+    conn: &SmbConn,
+    share: &str,
+    remote_path: &str,
+    progress: Option<&std::sync::Mutex<SmbFetchDiag>>,
+) -> (Result<Vec<u8>, SmbError>, SmbFetchDiag) {
     let key = PoolKey::of(conn, share);
+    // Session acquisition (pooled reuse or fresh TCP + NTLM): its own
+    // clock so a dead pooled session shows as connect_ms≈timeout rather
+    // than an opaque stall.
+    let t_connect = std::time::Instant::now();
+    let co = match checkout(&key, conn, share).await {
+        Ok(co) => co,
+        Err(e) => return (Err(e), SmbFetchDiag::default()),
+    };
+    let mut backend = co.backend;
+    let mut diag = SmbFetchDiag {
+        pooled_hit: Some(co.pooled_hit),
+        connect_ms: t_connect.elapsed().as_millis() as u64,
+        evict_n: co.evicted,
+        ..Default::default()
+    };
+    // Mirror acquisition progress so an outer timeout still attributes
+    // the stall (a read-stall snapshot keeps connect_ms + pooled_hit).
+    note(progress, |d| {
+        d.pooled_hit = diag.pooled_hit;
+        d.connect_ms = diag.connect_ms;
+        d.evict_n = diag.evict_n;
+    });
     // First attempt: pooled or fresh session, sharing-violation loop intact.
-    let mut backend = checkout(&key, conn, share).await?;
+    let t_read = std::time::Instant::now();
     let mut last = String::new();
     for _ in 1..=3 {
-        match backend.read_file_shared(remote_path).await {
+        let (res, _chunks) = backend.read_file_shared_progress(remote_path, progress).await;
+        match res {
             Ok(d) if !d.is_empty() => {
+                diag.read_ms = t_read.elapsed().as_millis() as u64;
+                diag.bytes = d.len() as u64;
                 checkin(key, backend).await;
-                return Ok(d);
+                let snapshot = diag.clone();
+                note(progress, |d| {
+                    d.read_ms = snapshot.read_ms;
+                    d.bytes = snapshot.bytes;
+                });
+                return (Ok(d), diag);
             }
             Ok(_) => {
                 last = "empty file".to_string();
@@ -606,24 +771,57 @@ async fn pooled_download(
             }
         }
     }
+    diag.read_ms = t_read.elapsed().as_millis() as u64;
+    note(progress, |d| {
+        d.read_ms = diag.read_ms;
+        d.bytes = diag.bytes;
+    });
     // Transient (non-auth) failure: retry once on a FRESH session, then
     // give up. Auth failures never retry (no poison, nothing cached).
     // Empty file is a content answer, not a transport failure.
     if last == "empty file" {
-        return Err(SmbError::NotFound(last));
+        return (Err(SmbError::NotFound(last)), diag);
     }
     if SmbClient::<SmbCrateBackend>::should_retry("download", &last) {
-        let mut fresh = checkout_fresh(conn, share).await?;
-        match fresh.read_file_shared(remote_path).await {
-            Ok(d) if !d.is_empty() => {
-                checkin(key, fresh).await;
-                return Ok(d);
+        let t2 = std::time::Instant::now();
+        match checkout_fresh(conn, share).await {
+            Ok(mut fresh) => {
+                diag.pooled_hit = Some(false);
+                diag.connect_ms = t2.elapsed().as_millis() as u64;
+                note(progress, |d| {
+                    d.pooled_hit = diag.pooled_hit;
+                    d.connect_ms = diag.connect_ms;
+                });
+                let t3 = std::time::Instant::now();
+                let (res, _chunks) =
+                    fresh.read_file_shared_progress(remote_path, progress).await;
+                match res {
+                    Ok(d) if !d.is_empty() => {
+                        diag.read_ms = t3.elapsed().as_millis() as u64;
+                        diag.bytes = d.len() as u64;
+                        checkin(key, fresh).await;
+                        let snapshot = diag.clone();
+                        note(progress, |d| {
+                            d.read_ms = snapshot.read_ms;
+                            d.bytes = snapshot.bytes;
+                        });
+                        return (Ok(d), diag);
+                    }
+                    Ok(_) => last = "empty file".to_string(),
+                    Err(m) => last = m,
+                }
+                diag.read_ms = t3.elapsed().as_millis() as u64;
+                note(progress, |d| d.read_ms = diag.read_ms);
             }
-            Ok(_) => last = "empty file".to_string(),
-            Err(m) => last = m,
+            Err(e) => {
+                // Fresh connect failed: keep the original read error as
+                // the outcome (matches pre-diag behavior) — the fresh
+                // error is transport noise, not the root cause.
+                let _ = e;
+            }
         }
     }
-    Err(classify_error(&last))
+    (Err(classify_error(&last)), diag)
 }
 
 /// Connect bypassing the pool (fresh-session retry path).
@@ -642,7 +840,8 @@ async fn pooled_list(
     path: &str,
 ) -> Result<Vec<SmbEntry>, SmbError> {
     let key = PoolKey::of(conn, share);
-    let mut backend = checkout(&key, conn, share).await?;
+    let co = checkout(&key, conn, share).await?;
+    let mut backend = co.backend;
     match backend.list_directory(path).await {
         Ok(files) => {
             checkin(key, backend).await;

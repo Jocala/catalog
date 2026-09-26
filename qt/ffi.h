@@ -24,6 +24,9 @@ char *catalog_browse(const char *config_json, const char *mode,
                      bool sort_descending, bool sort_by_author);
 char *catalog_search(const char *config_json, const char *params_json);
 char *catalog_detail(const char *config_json, long long book_id);
+// Last metadata-fetch diag (see catalog-ffi): {"ok":{…}} when a
+// diag-gated fetch ran, else {"ok":{}}. Read off the UI thread.
+char *catalog_last_diag(void);
 CatalogBytes catalog_cover(const char *config_json, const char *book_path,
                            unsigned max_w, unsigned max_h);
 

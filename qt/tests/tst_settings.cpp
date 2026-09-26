@@ -103,6 +103,15 @@ private slots:
         QCOMPARE(o.value("remote_dir").toString(), QString("calibre/"));
         QCOMPARE(o.value("user").toString(), QString("u"));
         QCOMPARE(o.value("pass").toString(), QString("p"));
+        // Ephemeral flags default off: no fresh/diag keys unless asked
+        // (and the FFI strips them from its cache key when present).
+        QVERIFY(!o.contains("fresh"));
+        QVERIFY(!o.contains("diag"));
+        QJsonObject fresh = QJsonDocument::fromJson(
+            s.libraryConfigJson(true, true).toUtf8()).object();
+        QCOMPARE(fresh.value("fresh").toString(), QString("1"));
+        QCOMPARE(fresh.value("diag").toString(), QString("1"));
+        QCOMPARE(fresh.value("host").toString(), QString("h"));
     }
 
     void hasSource() {

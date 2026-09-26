@@ -79,10 +79,42 @@ private:
         QString payload;
         QString error;
         int gen = 0; // startLoad generation: stale results are discarded
+        // Diag splits (ms): queue = startLoad->worker entry, ffi = single
+        // blocking engine call, parse = ffi JSON -> compact payload,
+        // fetch1/2 = engine metadata attempts, open = :memory: load,
+        // query = SQL after open. Fetch-side fields come from
+        // catalog_last_diag() and are only filled when the load was
+        // diag-gated (Settings → Diagnostic logging); otherwise zero.
+        qint64 queueMs = 0;
+        qint64 ffiMs = 0;
+        qint64 parseMs = 0;
+        qint64 fetch1Ms = 0;
+        qint64 fetch2Ms = 0;
+        qint64 openMs = 0;
+        qint64 queryMs = 0;
+        qint64 dbBytes = 0;
+        int attempts = 0;
+        QString pooled;
+        // Attempt-1 split (the interesting half of a stall) + eviction
+        // counts + cache-hit marker. Zero/false when not diag-gated.
+        QString fetch1Pooled;
+        qint64 fetch1ConnectMs = 0;
+        qint64 fetch1ReadMs = 0;
+        int fetch1EvictN = 0;
+        int evictN = 0;
+        bool cached = false;
+        // Chunk progress (1 MiB chunks): completed / total, this attempt
+        // and attempt 1. Settles wedge-vs-crawl on the next stall.
+        qint64 chunksDone = 0;
+        qint64 chunksTotal = 0;
+        qint64 fetch1ChunksDone = 0;
+        qint64 fetch1ChunksTotal = 0;
+        bool fresh = false; // Reload bypass of the FFI metadata cache
+        bool diag = false;  // extended fetch timings requested
     };
     void startLoad(const QString &kind, const QString &arg1 = QString());
     static LoadResult doLoad(QString cfg, QString kind, QString arg1, Sort sort,
-                             Mode mode, QJsonObject searchParams);
+                             Mode mode, QJsonObject searchParams, bool diag);
     void applyLoad(const LoadResult &r);
     void fetchCover(const QString &path, int gen);
     QString statusCounts();
@@ -151,5 +183,6 @@ private:
     // orphaned generations are discarded in onLoaded.
     int m_loadGen = 0;
     QElapsedTimer m_loadClock;
+    bool m_loadFresh = false; // fresh flag of the in-flight load (watchdog line)
     static const int LOAD_TIMEOUT_MS = 45000;
 };

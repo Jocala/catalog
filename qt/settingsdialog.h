@@ -50,5 +50,6 @@ private:
     QLabel *m_koboStatus;
     QComboBox *m_theme;
     QCheckBox *m_updateCheck;
+    QCheckBox *m_diagCheck;
     QSet<QString> m_revealed;
 };

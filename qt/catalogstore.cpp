@@ -15,6 +15,7 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QtConcurrent>
+#include <chrono>
 namespace {
 int g_traceN = 0;
 void trace(const QString &line) {
@@ -276,8 +277,11 @@ void CatalogStore::startLoad(const QString &kind, const QString &arg1) {
     m_loadClock.start();
     trace(QString("load start gen=%1 kind=%2").arg(gen).arg(kind));
     emit loadingChanged(true);
-    QString cfg = m_settings.libraryConfigJson(m_freshNext);
+    const bool freshUsed = m_freshNext;
+    const bool diagUsed = m_settings.diagLogging;
+    QString cfg = m_settings.libraryConfigJson(m_freshNext, diagUsed);
     m_freshNext = false;
+    m_loadFresh = freshUsed;
     Sort sort = m_sort;
     Mode mode = m_mode;
     QJsonObject params = m_searchParams;
@@ -293,9 +297,14 @@ void CatalogStore::startLoad(const QString &kind, const QString &arg1) {
         else if (drillKind == "tag")
             arg = drillTag;
     }
+    const auto t0 = std::chrono::steady_clock::now();
     QFuture<LoadResult> f = QtConcurrent::run([=]() {
-        LoadResult r = doLoad(cfg, kind, arg, sort, mode, params);
+        const auto tEntry = std::chrono::steady_clock::now();
+        LoadResult r = doLoad(cfg, kind, arg, sort, mode, params, diagUsed);
         r.gen = gen;
+        r.fresh = freshUsed;
+        r.diag = diagUsed;
+        r.queueMs = std::chrono::duration_cast<std::chrono::milliseconds>(tEntry - t0).count();
         return r;
     });
     m_watcher.setFuture(f);
@@ -307,7 +316,8 @@ void CatalogStore::startLoad(const QString &kind, const QString &arg1) {
 }
 
 CatalogStore::LoadResult CatalogStore::doLoad(QString cfg, QString kind, QString arg1,
-                                              Sort sort, Mode mode, QJsonObject searchParams) {
+                                              Sort sort, Mode mode, QJsonObject searchParams,
+                                              bool diag) {
     LoadResult r;
     r.kind = kind;
     QByteArray cfgB = cfg.toUtf8();
@@ -317,6 +327,8 @@ CatalogStore::LoadResult CatalogStore::doLoad(QString cfg, QString kind, QString
     QJsonValue payload;
     QString err;
     char *raw = nullptr;
+    QElapsedTimer ffiClock;
+    ffiClock.start();
     if (kind == "root") {
         if (mode == Books) {
             raw = catalog_fetch_books(cfgB.constData(), "", desc, byAuthor, byDate);
@@ -362,16 +374,49 @@ CatalogStore::LoadResult CatalogStore::doLoad(QString cfg, QString kind, QString
     } else if (kind == "detail") {
         raw = catalog_detail(cfgB.constData(), arg1.toLongLong());
     }
+    r.ffiMs = ffiClock.elapsed();
+    if (diag) {
+        // Same worker thread, immediately after the FFI call that stashed
+        // it (covers never touch the diag slot, loads are serialized —
+        // except an orphaned watchdog worker, whose diag may rarely
+        // interleave; acceptable for diagnostics).
+        QJsonValue diagPayload;
+        QString diagErr;
+        if (ffiOk(catalog_last_diag(), diagPayload, diagErr) && diagPayload.isObject()) {
+            QJsonObject d = diagPayload.toObject();
+            r.fetch1Ms = (qint64)d.value("fetch1_ms").toDouble(0);
+            r.fetch2Ms = (qint64)d.value("fetch2_ms").toDouble(0);
+            r.openMs = (qint64)d.value("open_ms").toDouble(0);
+            r.queryMs = (qint64)d.value("query_ms").toDouble(0);
+            r.dbBytes = (qint64)d.value("bytes").toDouble(0);
+            r.attempts = d.value("attempts").toInt(0);
+            r.pooled = d.value("pooled").toString();
+            r.fetch1Pooled = d.value("fetch1_pooled").toString();
+            r.fetch1ConnectMs = (qint64)d.value("fetch1_connect_ms").toDouble(0);
+            r.fetch1ReadMs = (qint64)d.value("fetch1_read_ms").toDouble(0);
+            r.fetch1EvictN = d.value("fetch1_evict_n").toInt(0);
+            r.evictN = d.value("evict_n").toInt(0);
+            r.cached = d.value("cached").toBool(false);
+            r.chunksDone = (qint64)d.value("chunks_done").toDouble(0);
+            r.chunksTotal = (qint64)d.value("chunks_total").toDouble(0);
+            r.fetch1ChunksDone = (qint64)d.value("fetch1_chunks_done").toDouble(0);
+            r.fetch1ChunksTotal = (qint64)d.value("fetch1_chunks_total").toDouble(0);
+        }
+    }
     if (!raw) {
         r.error = "ffi returned null";
         return r;
     }
+    QElapsedTimer parseClock;
+    parseClock.start();
     if (!ffiOk(raw, payload, err)) {
         r.error = err;
+        r.parseMs = parseClock.elapsed();
         return r;
     }
     r.payload = QString::fromUtf8(
         QJsonDocument::fromVariant(payload.toVariant()).toJson(QJsonDocument::Compact));
+    r.parseMs = parseClock.elapsed();
     return r;
 }
 
@@ -387,7 +432,47 @@ void CatalogStore::onLoaded() {
     // must see the filled model. Emitting first locks a fresh launch onto
     // the empty page even when books arrived — the grid then never shows
     // until the next reload finds stale rows.
+    QElapsedTimer applyClock;
+    applyClock.start();
     applyLoad(r);
+    const qint64 applyMs = applyClock.elapsed();
+    const qint64 totalMs = m_loadClock.elapsed();
+    if (m_settings.diagLogging) {
+        const int rows = (r.kind == "detail") ? (r.error.isEmpty() ? 1 : 0) : m_model.rowCount();
+        QString msg = QString("gen=%1 kind=%2 fresh=%3 queue_ms=%4 ffi_ms=%5 parse_ms=%6 apply_ms=%7 total_ms=%8 rows=%9")
+                          .arg(r.gen)
+                          .arg(r.kind)
+                          .arg(r.fresh ? 1 : 0)
+                          .arg(r.queueMs)
+                          .arg(r.ffiMs)
+                          .arg(r.parseMs)
+                          .arg(applyMs)
+                          .arg(totalMs)
+                          .arg(rows);
+        if (r.diag) {
+            msg += QString(" fetch1_ms=%1 fetch2_ms=%2 open_ms=%3 query_ms=%4 attempts=%5 pooled=%6 bytes=%7 cached=%8 evict_n=%9 fetch1_pooled=%10 fetch1_conn=%11 fetch1_read=%12 fetch1_evict=%13 chunks=%14/%15 fetch1_chunks=%16/%17")
+                       .arg(r.fetch1Ms)
+                       .arg(r.fetch2Ms)
+                       .arg(r.openMs)
+                       .arg(r.queryMs)
+                       .arg(r.attempts)
+                       .arg(r.pooled.isEmpty() ? QString("-") : r.pooled)
+                       .arg(r.dbBytes)
+                       .arg(r.cached ? 1 : 0)
+                       .arg(r.evictN)
+                       .arg(r.fetch1Pooled.isEmpty() ? QString("-") : r.fetch1Pooled)
+                       .arg(r.fetch1ConnectMs)
+                       .arg(r.fetch1ReadMs)
+                       .arg(r.fetch1EvictN)
+                       .arg(r.chunksDone)
+                       .arg(r.chunksTotal)
+                       .arg(r.fetch1ChunksDone)
+                       .arg(r.fetch1ChunksTotal);
+        }
+        if (!r.error.isEmpty())
+            msg += " error=" + r.error.left(160);
+        m_log.log("diag", msg);
+    }
     emit loadingChanged(false);
 }
 
@@ -404,8 +489,9 @@ void CatalogStore::onLoadTimeout(int gen, const QString &kind) {
     }
     const QString msg =
         "Could not reach the Calibre library (load timed out - the library may be unreachable).";
-    m_log.log("library", QString("kind=%1 gen=%2 ms=%3 :: %4")
-                               .arg(kind).arg(gen).arg(m_loadClock.elapsed()).arg(msg));
+    m_log.log("library", QString("kind=%1 gen=%2 ms=%3 fresh=%4 :: %5")
+                               .arg(kind).arg(gen).arg(m_loadClock.elapsed())
+                               .arg(m_loadFresh ? 1 : 0).arg(msg));
     emit dbError(msg);
 }
 

@@ -93,6 +93,47 @@ fn file_source(cfg: &serde_json::Value) -> Result<FileSource, String> {
     ))
 }
 
+/// Last metadata-fetch diag, stashed only when the shell passes
+/// `"diag":"1"` (Settings → Diagnostic logging). Read back via
+/// [`catalog_last_diag`]. No secrets: millis, attempt counts, pool
+/// hit/miss, byte size — never config values.
+static LAST_DIAG: OnceLock<Mutex<Option<serde_json::Value>>> = OnceLock::new();
+
+fn stash_diag(v: serde_json::Value) {
+    let slot = LAST_DIAG.get_or_init(|| Mutex::new(None));
+    if let Ok(mut g) = slot.lock() {
+        *g = Some(v);
+    }
+}
+
+/// Merge `query_ms` into the stashed diag (query runs after `open_db`
+/// in each entry point). No-op when diagnostics are off (nothing stashed).
+fn patch_query_ms(ms: u64) {
+    let slot = match LAST_DIAG.get() {
+        Some(s) => s,
+        None => return,
+    };
+    if let Ok(mut g) = slot.lock() {
+        if let Some(v) = g.as_mut() {
+            if let Some(o) = v.as_object_mut() {
+                o.insert("query_ms".to_string(), serde_json::json!(ms));
+            }
+        }
+    }
+}
+
+/// Cache key for the metadata.db byte cache: the full config minus
+/// ephemeral flags. `fresh`/`diag` must not fork entries (toggling
+/// diagnostics or hitting Reload would otherwise duplicate the cache).
+fn cache_key(cfg: &serde_json::Value) -> String {
+    let mut pruned = cfg.clone();
+    if let Some(o) = pruned.as_object_mut() {
+        o.remove("fresh");
+        o.remove("diag");
+    }
+    serde_json::to_string(&pruned).unwrap_or_default()
+}
+
 fn open_db(
     cfg: &serde_json::Value,
 ) -> Result<(rusqlite::Connection, FileSource), String> {
@@ -105,8 +146,9 @@ fn open_db(
     static CACHE: OnceLock<DbCache> = OnceLock::new();
     static TTL: std::time::Duration = std::time::Duration::from_secs(60);
     let src = file_source(cfg)?;
-    let key = serde_json::to_string(cfg).unwrap_or_default();
+    let key = cache_key(cfg);
     let fresh = cfg_get(cfg, "fresh") == "1";
+    let diag_on = cfg_get(cfg, "diag") == "1";
     let bytes = if !fresh {
         CACHE
             .get_or_init(|| DbCache::new(std::collections::HashMap::new()))
@@ -118,25 +160,48 @@ fn open_db(
     } else {
         None
     };
+    let cached_hit = bytes.is_some();
     let bytes = match bytes {
         Some(b) => b,
         None => {
             // Hung TCP connect/read used to block the shell's Loading…
             // bar forever (15-min report on a fresh m1 install). Bound the
             // whole metadata.db fetch so doLoad always returns to the UI.
-            let fetch = || {
+            // Each attempt reports its own elapsed + pool hit/miss so a
+            // stall attributes to session acquisition (connect_ms≈timeout)
+            // vs the read (read_ms≈timeout). Detail only surfaces when
+            // `diag` is set; off-mode keeps today's generic message.
+            //
+            // Attempt outcome: Ok(bytes) / Err(message) plus attempt
+            // timing. The 30s bound wraps the fetch future itself (as
+            // before); `progress` survives a timeout because it lives in
+            // the outer block, so even a hard stall reports how far the
+            // attempt got (session acquired? read started?).
+            let fetch = || -> (
+                Result<Vec<u8>, String>,
+                u64,
+                catalog_core::smb::SmbFetchDiag,
+            ) {
                 runtime().block_on(async {
-                    match tokio::time::timeout(
+                    let progress =
+                        std::sync::Mutex::new(catalog_core::smb::SmbFetchDiag::default());
+                    let t = std::time::Instant::now();
+                    let res = tokio::time::timeout(
                         std::time::Duration::from_secs(30),
-                        src.read_db_bytes(),
+                        src.read_db_bytes_with_progress(&progress),
                     )
-                    .await
-                    {
-                        Ok(Ok(b)) => Ok(b),
-                        Ok(Err(e)) => Err(e.to_string()),
-                        Err(_) => Err(
-                            "Could not reach the Calibre library (timed out reading metadata.db - check host/share/path)".to_string(),
-                        ),
+                    .await;
+                    let ms = t.elapsed().as_millis() as u64;
+                    match res {
+                        Ok((Ok(b), d)) => (Ok(b), ms, d),
+                        Ok((Err(e), d)) => (Err(e.to_string()), ms, d),
+                        Err(_) => {
+                            let partial = progress
+                                .lock()
+                                .map(|g| g.clone())
+                                .unwrap_or_default();
+                            (Err("timed out".to_string()), ms.max(30_000), partial)
+                        }
                     }
                 })
             };
@@ -146,10 +211,47 @@ fn open_db(
             // 5s). The timed-out attempt's backend is dropped, never
             // pooled, so the retry dials a new session — same spirit as
             // the first-SYN retry on the test path.
-            let b: Vec<u8> = match fetch() {
+            let (first, first_ms, first_diag) = match fetch() {
+                (Ok(b), ms, d) => {
+                    let diag = diag_json(1, ms, 0, &d, &d);
+                    (Ok(b), ms, diag)
+                }
+                (Err(e), ms, first_smb) if e.contains("timed out") => {
+                    let (second, second_ms, second_diag) = fetch();
+                    match second {
+                        Ok(b) => {
+                            let diag = diag_json(2, ms, second_ms, &second_diag, &first_smb);
+                            (Ok(b), second_ms, diag)
+                        }
+                        Err(e2) if e2.contains("timed out") => {
+                            let msg = timeout_message(diag_on, 2, ms, second_ms, &second_diag);
+                            let diag = diag_json(2, ms, second_ms, &second_diag, &first_smb);
+                            (Err(msg), second_ms, diag)
+                        }
+                        // Retry surfaced a different (real) error — pass
+                        // it through unchanged, exactly as before.
+                        Err(e2) => {
+                            let diag = diag_json(2, ms, second_ms, &second_diag, &first_smb);
+                            (Err(e2), second_ms, diag)
+                        }
+                    }
+                }
+                (Err(e), ms, d) => {
+                    let diag = diag_json(1, ms, 0, &d, &d);
+                    (Err(e), ms, diag)
+                }
+            };
+            let _ = first_ms;
+            let b: Vec<u8> = match first {
                 Ok(b) => b,
-                Err(e) if e.contains("timed out") => fetch()?,
-                Err(e) => return Err(e),
+                Err(e) => {
+                    if diag_on {
+                        // Stash the failed-attempt diag so a subsequent
+                        // catalog_last_diag() still explains the outage.
+                        stash_diag(first_diag);
+                    }
+                    return Err(e);
+                }
             };
             if let Ok(mut cache) = CACHE
                 .get_or_init(|| DbCache::new(std::collections::HashMap::new()))
@@ -157,11 +259,125 @@ fn open_db(
             {
                 cache.insert(key, (b.clone(), std::time::Instant::now()));
             }
+            // Stash the successful-fetch diag (open/query times patched
+            // in below / by the caller). Only when the shell asked.
+            if diag_on {
+                let t_open = std::time::Instant::now();
+                let conn = db::open_memory_db(&b).map_err(|e| e.to_string())?;
+                let open_ms = t_open.elapsed().as_millis() as u64;
+                let mut diag = first_diag;
+                if let Some(o) = diag.as_object_mut() {
+                    o.insert("open_ms".to_string(), serde_json::json!(open_ms));
+                    o.insert("bytes".to_string(), serde_json::json!(b.len() as u64));
+                }
+                stash_diag(diag);
+                return Ok((conn, src));
+            }
             b
         }
     };
+    // Cache hit: no fetch ran. Stash an explicit cached diag so the
+    // shell never mistakes the previous fetch's numbers for this load.
+    if cached_hit && diag_on {
+        let t_open = std::time::Instant::now();
+        let conn = db::open_memory_db(&bytes).map_err(|e| e.to_string())?;
+        let open_ms = t_open.elapsed().as_millis() as u64;
+        stash_diag(cached_diag(bytes.len() as u64, open_ms));
+        return Ok((conn, src));
+    }
     let conn = db::open_memory_db(&bytes).map_err(|e| e.to_string())?;
     Ok((conn, src))
+}
+
+/// Timeout message: generic off-mode text preserved byte-for-byte;
+/// diag mode appends attempt timing + pool state.
+fn timeout_message(
+    diag_on: bool,
+    attempts: u32,
+    first_ms: u64,
+    second_ms: u64,
+    diag: &catalog_core::smb::SmbFetchDiag,
+) -> String {
+    const BASE: &str = "Could not reach the Calibre library (timed out reading metadata.db - check host/share/path)";
+    if !diag_on {
+        return BASE.to_string();
+    }
+    let pooled = match diag.pooled_hit {
+        Some(true) => "hit",
+        Some(false) => "miss",
+        None => "n/a",
+    };
+    format!(
+        "{BASE} [diag attempts={attempts} fetch1_ms={first_ms} fetch2_ms={second_ms} pooled={pooled} connect_ms={} read_ms={}]",
+        diag.connect_ms, diag.read_ms
+    )
+}
+
+/// Diag JSON for `catalog_last_diag`: millis, attempts, pool hit/miss,
+/// byte size (filled by the caller once known). `first` is the attempt-1
+/// SMB split (the interesting one on a stall); top-level pool/connect/
+/// read describe the decisive attempt. Never config values.
+fn diag_json(
+    attempts: u32,
+    fetch1_ms: u64,
+    fetch2_ms: u64,
+    smb: &catalog_core::smb::SmbFetchDiag,
+    first: &catalog_core::smb::SmbFetchDiag,
+) -> serde_json::Value {
+    fn pool_name(hit: Option<bool>) -> &'static str {
+        match hit {
+            Some(true) => "hit",
+            Some(false) => "miss",
+            None => "n/a",
+        }
+    }
+    serde_json::json!({
+        "attempts": attempts,
+        "fetch1_ms": fetch1_ms,
+        "fetch1_pooled": pool_name(first.pooled_hit),
+        "fetch1_connect_ms": first.connect_ms,
+        "fetch1_read_ms": first.read_ms,
+        "fetch1_evict_n": first.evict_n,
+        "fetch1_chunks_done": first.chunks_done,
+        "fetch1_chunks_total": first.chunks_total,
+        "fetch2_ms": fetch2_ms,
+        "pooled": pool_name(smb.pooled_hit),
+        "connect_ms": smb.connect_ms,
+        "read_ms": smb.read_ms,
+        "evict_n": smb.evict_n,
+        "chunks_done": smb.chunks_done,
+        "chunks_total": smb.chunks_total,
+        "bytes": smb.bytes,
+        "open_ms": 0,
+        "query_ms": 0,
+        "cached": false,
+    })
+}
+
+/// Cache-hit diag: no fetch ran, so attempts carry nothing — but the
+/// shell must not mistake the previous fetch's numbers for this load's.
+fn cached_diag(bytes: u64, open_ms: u64) -> serde_json::Value {
+    serde_json::json!({
+        "attempts": 0,
+        "fetch1_ms": 0,
+        "fetch1_pooled": "n/a",
+        "fetch1_connect_ms": 0,
+        "fetch1_read_ms": 0,
+        "fetch1_evict_n": 0,
+        "fetch1_chunks_done": 0,
+        "fetch1_chunks_total": 0,
+        "fetch2_ms": 0,
+        "pooled": "n/a",
+        "connect_ms": 0,
+        "read_ms": 0,
+        "evict_n": 0,
+        "chunks_done": 0,
+        "chunks_total": 0,
+        "bytes": bytes,
+        "open_ms": open_ms,
+        "query_ms": 0,
+        "cached": true,
+    })
 }
 
 fn search_params(v: &serde_json::Value) -> SearchParams {
@@ -245,8 +461,25 @@ pub extern "C" fn catalog_open_count(config_json: *const c_char) -> *mut c_char 
         let cfg: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
         let (conn, _src) = open_db(&cfg)?;
+        let t_q = std::time::Instant::now();
         let n = db::fetch_count(&conn, "").map_err(|e| e.to_string())?;
+        patch_query_ms(t_q.elapsed().as_millis() as u64);
         Ok(serde_json::json!({"books": n}))
+    })
+}
+
+/// Last metadata-fetch diag (`catalog_last_diag`): `{"ok":{…}}` when a
+/// diag-gated fetch ran since process start, else `{"ok":{}}`. Additive
+/// readout for the shell's `[diag]` line — never an error.
+#[no_mangle]
+pub extern "C" fn catalog_last_diag() -> *mut c_char {
+    run(|| {
+        let v = LAST_DIAG
+            .get()
+            .and_then(|s| s.lock().ok())
+            .and_then(|g| g.clone())
+            .unwrap_or(serde_json::json!({}));
+        Ok(v)
     })
 }
 
@@ -265,9 +498,11 @@ pub extern "C" fn catalog_fetch_books(
         let cfg: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
         let (conn, src) = open_db(&cfg)?;
+        let t_q = std::time::Instant::now();
         let books =
             db::fetch_books(&conn, &src, &q, sort_descending, sort_by_author, sort_by_date)
                 .map_err(|e| e.to_string())?;
+        patch_query_ms(t_q.elapsed().as_millis() as u64);
         serde_json::to_value(&books).map_err(|e| e.to_string())
     })
 }
@@ -289,10 +524,14 @@ pub extern "C" fn catalog_browse(
         let cfg: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
         let (conn, src) = open_db(&cfg)?;
-        if mode == "tags" {
-            let tags = db::all_tags(&conn, sort_descending).map_err(|e| e.to_string())?;
-            return serde_json::to_value(&tags).map_err(|e| e.to_string());
-        }
+        // Query phase timed as one unit (patch lands in the stashed diag
+        // only when the shell gated diagnostics on — otherwise a no-op).
+        let t_q = std::time::Instant::now();
+        let out: Result<serde_json::Value, String> = (|| {
+            if mode == "tags" {
+                let tags = db::all_tags(&conn, sort_descending).map_err(|e| e.to_string())?;
+                return serde_json::to_value(&tags).map_err(|e| e.to_string());
+            }
         if mode == "authors" {
             let authors =
                 db::all_authors(&conn, &src, sort_descending).map_err(|e| e.to_string())?;
@@ -336,6 +575,10 @@ pub extern "C" fn catalog_browse(
             return serde_json::to_value(&series).map_err(|e| e.to_string());
         }
         Err(format!("unknown browse mode: {mode}"))
+    })();
+        let out = out?;
+        patch_query_ms(t_q.elapsed().as_millis() as u64);
+        Ok(out)
     })
 }
 
@@ -354,7 +597,9 @@ pub extern "C" fn catalog_search(
             serde_json::from_str(&praw).map_err(|e| format!("bad params json: {e}"))?;
         let params = search_params(&pval);
         let (conn, src) = open_db(&cfg)?;
+        let t_q = std::time::Instant::now();
         let books = db::search_books(&conn, &src, &params).map_err(|e| e.to_string())?;
+        patch_query_ms(t_q.elapsed().as_millis() as u64);
         serde_json::to_value(&books).map_err(|e| e.to_string())
     })
 }
@@ -367,10 +612,13 @@ pub extern "C" fn catalog_detail(config_json: *const c_char, book_id: i64) -> *m
         let cfg: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
         let (conn, _src) = open_db(&cfg)?;
-        match db::book_detail(&conn, book_id).map_err(|e| e.to_string())? {
+        let t_q = std::time::Instant::now();
+        let out = match db::book_detail(&conn, book_id).map_err(|e| e.to_string())? {
             Some(d) => serde_json::to_value(&d).map_err(|e| e.to_string()),
             None => Err(format!("unknown book id: {book_id}")),
-        }
+        };
+        patch_query_ms(t_q.elapsed().as_millis() as u64);
+        out
     })
 }
 
@@ -668,4 +916,107 @@ pub extern "C" fn catalog_kobo_prompt_done_set(done_json: *const c_char) -> *mut
         s.save().map_err(|e| e.to_string())?;
         Ok(serde_json::json!({"done": done}))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_cfg(extra: serde_json::Value) -> serde_json::Value {
+        let mut o = serde_json::json!({
+            "source": "smb",
+            "host": "h",
+            "share": "s",
+            "remote_dir": "calibre",
+            "user": "u",
+            "pass": "p",
+            "domain": "",
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            o[k] = v.clone();
+        }
+        o
+    }
+
+    #[test]
+    fn cache_key_strips_ephemeral_flags() {
+        let base = test_cfg(serde_json::json!({}));
+        let flagged = test_cfg(serde_json::json!({"fresh": "1", "diag": "1"}));
+        assert_eq!(cache_key(&base), cache_key(&flagged));
+        assert!(!cache_key(&flagged).contains("fresh"));
+        assert!(!cache_key(&flagged).contains("diag"));
+        // Credentials still split entries (existing behavior preserved).
+        let other_pass = test_cfg(serde_json::json!({"pass": "other"}));
+        assert_ne!(cache_key(&base), cache_key(&other_pass));
+    }
+
+    #[test]
+    fn timeout_message_off_mode_is_byte_stable() {
+        let d = catalog_core::smb::SmbFetchDiag::default();
+        assert_eq!(
+            timeout_message(false, 2, 30000, 30000, &d),
+            "Could not reach the Calibre library (timed out reading metadata.db - check host/share/path)"
+        );
+    }
+
+    #[test]
+    fn diag_carries_no_secrets() {
+        let d = catalog_core::smb::SmbFetchDiag {
+            pooled_hit: Some(true),
+            connect_ms: 12,
+            read_ms: 3456,
+            bytes: 42000000,
+            evict_n: 2,
+            chunks_done: 44,
+            chunks_total: 44,
+        };
+        let v = diag_json(2, 30000, 3456, &d, &d);
+        // Exact key set: ints + pool state only, never config values.
+        let mut keys: Vec<String> = v
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec![
+                "attempts",
+                "bytes",
+                "cached",
+                "chunks_done",
+                "chunks_total",
+                "connect_ms",
+                "evict_n",
+                "fetch1_chunks_done",
+                "fetch1_chunks_total",
+                "fetch1_connect_ms",
+                "fetch1_evict_n",
+                "fetch1_ms",
+                "fetch1_pooled",
+                "fetch1_read_ms",
+                "fetch2_ms",
+                "open_ms",
+                "pooled",
+                "query_ms",
+                "read_ms",
+            ]
+        );
+        assert_eq!(v["attempts"], 2);
+        assert_eq!(v["pooled"], "hit");
+        assert_eq!(v["bytes"], 42000000);
+        assert_eq!(v["evict_n"], 2);
+        assert_eq!(v["cached"], false);
+    }
+
+    #[test]
+    fn cached_diag_marks_no_fetch() {
+        let v = cached_diag(42000000, 1359);
+        assert_eq!(v["cached"], true);
+        assert_eq!(v["attempts"], 0);
+        assert_eq!(v["fetch1_ms"], 0);
+        assert_eq!(v["bytes"], 42000000);
+        assert_eq!(v["open_ms"], 1359);
+    }
 }

@@ -36,6 +36,7 @@ struct AppSettings {
     int sortOrder = 0;       // toolbar sort: CatalogStore::Sort enum value (0-4)
     QString viewMode = "grid"; // toolbar view: "grid" | "list"
     bool checkForUpdates = true; // startup update check (opt-out in Settings)
+    bool diagLogging = false;    // diagnostic load timings in errors.log ([diag])
     QByteArray windowGeometry; // Qt saveGeometry blob (position + height;
                                // width is fixed by the shell, empty = default)
 
@@ -53,7 +54,9 @@ struct AppSettings {
 
     // FFI library-config JSON for the primary server / local dir.
     // fresh=true bypasses the FFI metadata.db cache (Reload semantics).
-    QString libraryConfigJson(bool fresh = false) const;
+    // diag=true asks the engine to stash per-fetch timings for the
+    // [diag] line (Settings → Diagnostic logging; off = zero extra work).
+    QString libraryConfigJson(bool fresh = false, bool diag = false) const;
 
     static QString settingsPath();
     static AppSettings load();

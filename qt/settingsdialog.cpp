@@ -219,21 +219,30 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
     top->addWidget(koboGroup);
 
     QGroupBox *genGroup = new QGroupBox("General", body);
-    QHBoxLayout *genLay = new QHBoxLayout(genGroup);
-    genLay->addWidget(new QLabel("Theme", genGroup));
+    QVBoxLayout *genLay = new QVBoxLayout(genGroup);
+    QHBoxLayout *themeRow = new QHBoxLayout();
+    themeRow->addWidget(new QLabel("Theme", genGroup));
     m_theme = new QComboBox(genGroup);
     m_theme->addItems({"System", "Light", "Dark"});
     m_theme->setCurrentIndex(qBound(0, m_settings.theme, 2));
     connect(m_theme, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &SettingsDialog::onThemeChanged);
-    genLay->addWidget(m_theme);
-    genLay->addStretch();
+    themeRow->addWidget(m_theme);
+    themeRow->addStretch();
+    genLay->addLayout(themeRow);
     m_updateCheck = new QCheckBox("Check for updates at startup", genGroup);
     m_updateCheck->setChecked(m_settings.checkForUpdates);
     connect(m_updateCheck, &QCheckBox::toggled, this, [this](bool on) {
         m_settings.checkForUpdates = on;
     });
-    genLay->addWidget(m_updateCheck);
+    genLay->addWidget(m_updateCheck, 0, Qt::AlignLeft);
+    m_diagCheck = new QCheckBox("Diagnostic logging", genGroup);
+    m_diagCheck->setToolTip("Log per-load timings ([diag] in errors.log)");
+    m_diagCheck->setChecked(m_settings.diagLogging);
+    connect(m_diagCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_settings.diagLogging = on;
+    });
+    genLay->addWidget(m_diagCheck, 0, Qt::AlignLeft);
     top->addWidget(genGroup);
     top->addStretch();
     scroll->setWidget(body);

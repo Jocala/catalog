@@ -235,28 +235,66 @@ impl FileSource {
 
     /// Read the live metadata.db bytes from either source.
     pub async fn read_db_bytes(&self) -> Result<Vec<u8>, CatalogDbError> {
+        self.read_db_bytes_with_diag().await.0
+    }
+
+    /// Same fetch plus per-stage SMB timing (local sources report a
+    /// zeroed diag with the read folded into `read_ms`).
+    pub async fn read_db_bytes_with_diag(
+        &self,
+    ) -> (
+        Result<Vec<u8>, CatalogDbError>,
+        crate::smb::SmbFetchDiag,
+    ) {
+        let progress = std::sync::Mutex::new(crate::smb::SmbFetchDiag::default());
+        self.read_db_bytes_with_progress(&progress).await
+    }
+
+    /// Same fetch, mirroring stage progress into `progress` so a caller
+    /// that times the future out still learns how far the attempt got.
+    pub async fn read_db_bytes_with_progress(
+        &self,
+        progress: &std::sync::Mutex<crate::smb::SmbFetchDiag>,
+    ) -> (
+        Result<Vec<u8>, CatalogDbError>,
+        crate::smb::SmbFetchDiag,
+    ) {
         match self {
             Self::Local { dir } => {
+                let t = std::time::Instant::now();
                 let dir = dir.to_string_lossy().to_string();
-                read_local_db(&dir)
+                let out = read_local_db(&dir);
+                let d = crate::smb::SmbFetchDiag {
+                    read_ms: t.elapsed().as_millis() as u64,
+                    bytes: out.as_ref().map(|b| b.len() as u64).unwrap_or(0),
+                    ..Default::default()
+                };
+                (out, d)
             }
             Self::Smb { loc, conn } => {
-                crate::smb::download_db_bytes(conn.clone(), &loc.share, &loc.remote_path)
-                    .await
-                    .map_err(|e| {
-                        let mut db_err = CatalogDbError::from(e);
-                        // Attach the location for actionable errors.
-                        let path = format!("smb://{}/{}/{}", loc.host, loc.share, loc.remote_path);
-                        match &mut db_err {
-                            CatalogDbError::NotFound { smb_path, .. }
-                            | CatalogDbError::AuthFailed { smb_path, .. }
-                            | CatalogDbError::Network { smb_path, .. } => {
-                                *smb_path = path;
-                            }
-                            _ => {}
+                let (res, diag) = crate::smb::download_db_bytes_with_progress(
+                    conn.clone(),
+                    &loc.share,
+                    &loc.remote_path,
+                    progress,
+                )
+                .await;
+                let res = res.map_err(|e| {
+                    let mut db_err = CatalogDbError::from(e);
+                    // Attach the location for actionable errors.
+                    let path =
+                        format!("smb://{}/{}/{}", loc.host, loc.share, loc.remote_path);
+                    match &mut db_err {
+                        CatalogDbError::NotFound { smb_path, .. }
+                        | CatalogDbError::AuthFailed { smb_path, .. }
+                        | CatalogDbError::Network { smb_path, .. } => {
+                            *smb_path = path;
                         }
-                        db_err
-                    })
+                        _ => {}
+                    }
+                    db_err
+                });
+                (res, diag)
             }
         }
     }

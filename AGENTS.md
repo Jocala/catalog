@@ -53,6 +53,10 @@ below except where a live procedure depends on them.
   capped (256 MB), worker decode, coalesced repaints, silent fresh
   start, byte-capped (not count-capped) memory.
 - Passwords from Settings at runtime; never baked into builds; never logged.
+- Mac deploy cleanup (policy 2026-09-25): after a successful verified
+  install on a Mac host (m1/t2 `/Applications/JocalaCatalog.app` —
+  version + `spctl` + `codesign` + md5 all green), delete the staging
+  DMG (`/tmp/jocala-catalog.<VERSION>.dmg`).
 
 ## Rust (the engine)
 - What's proven (do not regress): core 33 unit + 6 golden tests, FFI 6 smoke tests, `cargo clippy --workspace --all-targets -- -D warnings` clean. Live SMB vs debian: NTLMv2, 6755 books in ~5s, `author:austen` works.
