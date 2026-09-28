@@ -3,9 +3,8 @@
 //!
 //! `KoboPath` replicates `calibre/devices/kobo/driver.py`
 //! `create_upload_path` (MAX_PATH_LEN=185, FAT sanitize, title_sort).
-//! The launcher shells `/usr/bin/ssh` exactly like Swift's `Process`
-//! heredoc path (Dropbear requires stdin, one-shot `ssh host cmd`
-//! returns empty).
+//! Transport is russh throughout (`ssh::run_shell_blocks`: shell channel,
+//! since Dropbear swallows EXEC); no external `ssh` binary is required.
 
 pub mod handoff;
 pub mod open;
@@ -245,51 +244,6 @@ pub fn strict_match<'a>(candidates: &'a [String], title: &str, author: &str) -> 
 pub struct SshResult {
     pub output: String,
     pub code: i32,
-}
-
-/// Internal SSH executor mirroring Swift `sshSync` (stdin heredoc,
-/// file-backed stdout to avoid pipe deadlock, local deadline).
-pub async fn ssh_sync(ip: &str, remote_cmd: &str, timeout_secs: u64) -> SshResult {
-    use tokio::io::AsyncWriteExt;
-    // Use "ssh" not "/usr/bin/ssh" for Windows parity.
-    let mut cmd = tokio::process::Command::new("ssh");
-    cmd.args([
-        "-T",
-        "-o",
-        &format!("ConnectTimeout={timeout_secs}"),
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        &format!("root@{ip}"),
-    ]);
-    cmd.stdin(std::process::Stdio::piped());
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
-    cmd.kill_on_drop(true);
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => return SshResult { output: format!("ssh launch failed: {e}"), code: -1 },
-    };
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{remote_cmd}\n").as_bytes()).await;
-    }
-    // wait_with_output takes ownership; on timeout the child is dropped
-    // (kill_on_drop) since we cannot reclaim the handle afterwards.
-    let out = tokio::time::timeout(
-        std::time::Duration::from_secs(timeout_secs + 2),
-        child.wait_with_output(),
-    )
-    .await;
-    match out {
-        Ok(Ok(o)) => {
-            let mut text = String::from_utf8_lossy(&o.stdout).to_string();
-            text.push_str(&String::from_utf8_lossy(&o.stderr));
-            SshResult { output: text, code: o.status.code().unwrap_or(-1) }
-        }
-        Ok(Err(e)) => SshResult { output: format!("ssh wait failed: {e}"), code: -1 },
-        Err(_) => SshResult { output: "(timed out)".into(), code: 124 },
-    }
 }
 
 pub fn koreader_open_cmd(chosen: &str) -> String {

@@ -160,6 +160,13 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
+- Catalog 1.05 LIVE 2026-09-28: EXE 16269217 + DMG 42771547
+  signed/notarized/stapled + TGZ 13968901; Kobo SSH fully Rust
+  (explicit file, password, ssh_config, agent, default identities;
+  RSA SHA-2 with SHA-1 fallback); handoff check/install on the russh
+  transport (no system ssh, no console flash); Settings Test walks the
+  same chain. Staging commit `b95ebfe`; GitHub release `v1.05` carries
+  all three installers.
 - Catalog 1.04 LIVE 2026-09-26: EXE 16275573 + DMG 42724189
   signed/notarized/stapled + TGZ 13930079; local `smb-metadata.db` copy
   (loads ~4s → ~1.5s, offline-stale fallback, Reload refreshes);

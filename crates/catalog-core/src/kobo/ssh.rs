@@ -1,16 +1,25 @@
-//! russh transport for Kobo (Dropbear): shell channel, password/key auth.
+//! russh transport for Kobo: shell channel, combined password/key auth.
 //!
-//! Mirrors the SSH.NET `SshSync` semantics in `KoboLauncher.cs`, which the
-//! `ssh`-binary `ssh_sync` in `kobo.rs` cannot match (it is `BatchMode`,
-//! key-only — per-IP passwords have no transport there):
-//! shell channel (EXEC is swallowed by Dropbear), `MARK:$?` trailer,
-//! deadline reads, trust-LAN host keys, `255` = auth rejection,
-//! `124` = overrun, `-1` = transport failure. Passwords travel only in
-//! memory and are never logged.
+//! Auth walks deliberate credentials first (explicit file, user-typed
+//! password, the user's own ssh_config), then ambient (agent,
+//! conventional defaults) — the way `ssh` itself resolves. No external
+//! `ssh` binary is required; every caller (open, sync, probe, handoff)
+//! rides this transport: shell channel (EXEC is swallowed by Dropbear),
+//! `MARK:$?` trailer, deadline reads, trust-LAN host keys, `255` = auth
+//! rejection, `124` = overrun, `-1` = transport failure. Passwords travel
+//! only in memory and are never logged.
+//!
+//! Auth walks deliberate credentials first (explicit file, user-typed
+//! password, the user's own ssh_config), then ambient (agent,
+//! conventional defaults) — the way `ssh` itself resolves. Every request
+//! counts against a budget so exotic setups stop with a clear 255
+//! instead of tripping the server's MaxAuthTries disconnect.
 
 use russh::client::{self, AuthResult};
+use russh::keys::agent::client::{AgentClient, AgentStream};
+use russh::keys::{HashAlg, PrivateKey};
 use russh::ChannelMsg;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,6 +37,238 @@ pub fn default_key_file() -> PathBuf {
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_default();
     PathBuf::from(home).join(".ssh").join("id_ed25519")
+}
+
+/// Filename order for the conventional default identities: ed25519 first
+/// (preserves the long-standing default), then RSA/ECDSA — the subset of
+/// OpenSSH's default identity list that russh can load.
+fn default_key_names() -> [&'static str; 3] {
+    ["id_ed25519", "id_rsa", "id_ecdsa"]
+}
+
+/// Conventional default identity files that actually exist. Hosts with a
+/// single key type try exactly one file; hosts with several fall back in
+/// `default_key_names` order, mirroring OpenSSH's multi-identity behaviour.
+pub fn default_key_files() -> Vec<PathBuf> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    default_key_names()
+        .iter()
+        .map(|n| PathBuf::from(&home).join(".ssh").join(n))
+        .filter(|p| p.is_file())
+        .collect()
+}
+
+/// Cap on auth requests per connection: OpenSSH servers disconnect after
+/// MaxAuthTries (default 6). Stop with a clear 255 instead.
+const MAX_AUTH_REQUESTS: u32 = 5;
+
+/// Max agent identities offered per connection (each is a server attempt).
+const MAX_AGENT_KEYS: usize = 4;
+
+/// Well-known Win10+ OpenSSH agent pipe.
+#[cfg(windows)]
+const WINDOWS_AGENT_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
+
+/// Glob for ssh_config Host patterns: `*`, `?`, case-insensitive.
+fn host_pat_matches(pat: &str, host: &str) -> bool {
+    let (p, h) = (pat.as_bytes(), host.as_bytes());
+    let (mut px, mut hx) = (0usize, 0usize);
+    let (mut star, mut mark) = (None::<usize>, 0usize);
+    while hx < h.len() {
+        if px < p.len()
+            && (p[px] == b'?' || p[px].eq_ignore_ascii_case(&h[hx]))
+        {
+            px += 1;
+            hx += 1;
+        } else if px < p.len() && p[px] == b'*' {
+            star = Some(px);
+            px += 1;
+            mark = hx;
+        } else if let Some(s) = star {
+            px = s + 1;
+            mark += 1;
+            hx = mark;
+        } else {
+            return false;
+        }
+    }
+    while px < p.len() && p[px] == b'*' {
+        px += 1;
+    }
+    px == p.len()
+}
+
+/// Minimal ssh_config reader: IdentityFile values from Host blocks
+/// matching `host`. Values accumulate across blocks like OpenSSH;
+/// options before the first Host line are global. `Match` blocks are
+/// ignored, `!` negation is honored, keywords are case-insensitive,
+/// `key=value` and quoted values are accepted.
+pub fn config_identity_files(config: &str, host: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut applies = true; // global scope until the first Host/Match
+    for raw in config.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut kv = line.splitn(2, |c: char| c == '=' || c.is_whitespace());
+        let kw = kv.next().unwrap_or("").to_ascii_lowercase();
+        let mut val = kv.next().unwrap_or("").trim().to_string();
+        if let Some(s) = val.strip_prefix('=') {
+            val = s.trim().to_string();
+        }
+        if val.len() >= 2
+            && ((val.starts_with('"') && val.ends_with('"'))
+                || (val.starts_with('\'') && val.ends_with('\'')))
+        {
+            val = val[1..val.len() - 1].to_string();
+        }
+        match kw.as_str() {
+            "host" => {
+                let mut pos = false;
+                let mut neg = false;
+                for pat in val.split_whitespace() {
+                    if let Some(n) = pat.strip_prefix('!') {
+                        if host_pat_matches(n, host) {
+                            neg = true;
+                        }
+                    } else if host_pat_matches(pat, host) {
+                        pos = true;
+                    }
+                }
+                applies = pos && !neg;
+            }
+            "match" => applies = false,
+            "identityfile" if applies && !val.is_empty() => out.push(val),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Expand a leading `~` against HOME/USERPROFILE. Anything else —
+/// including `%`-tokens — passes through and simply fails to load later.
+fn expand_ssh_path(s: &str) -> PathBuf {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    if let Some(rest) = s.strip_prefix("~/") {
+        return PathBuf::from(home).join(rest);
+    }
+    if s == "~" {
+        return PathBuf::from(home);
+    }
+    PathBuf::from(s)
+}
+
+fn ssh_config_text() -> Option<String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    if home.is_empty() {
+        return None;
+    }
+    std::fs::read_to_string(PathBuf::from(home).join(".ssh").join("config")).ok()
+}
+
+fn load_key(path: &Path) -> Option<Arc<PrivateKey>> {
+    russh::keys::load_secret_key(path, None).ok().map(Arc::new)
+}
+
+fn key_label(path: &Path) -> String {
+    path.file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+type DynAgent = AgentClient<Box<dyn AgentStream + Send + Unpin + 'static>>;
+
+#[cfg(unix)]
+async fn connect_agent() -> Option<DynAgent> {
+    AgentClient::connect_env().await.ok().map(|a| a.dynamic())
+}
+
+#[cfg(windows)]
+async fn connect_agent() -> Option<DynAgent> {
+    AgentClient::connect_named_pipe(WINDOWS_AGENT_PIPE)
+        .await
+        .ok()
+        .map(|a| a.dynamic())
+}
+
+#[cfg(not(any(unix, windows)))]
+async fn connect_agent() -> Option<DynAgent> {
+    None
+}
+
+async fn try_key_file(
+    handle: &mut client::Handle<TrustAll>,
+    key: &Arc<PrivateKey>,
+    ladder: &[Option<HashAlg>],
+    budget: &mut u32,
+) -> bool {
+    for alg in ladder {
+        if *budget == 0 {
+            return false;
+        }
+        *budget -= 1;
+        match handle
+            .authenticate_publickey(
+                "root",
+                russh::keys::PrivateKeyWithHashAlg::new(Arc::clone(key), *alg),
+            )
+            .await
+        {
+            Ok(AuthResult::Success) => return true,
+            _ => continue,
+        }
+    }
+    false
+}
+
+async fn try_agent_identities(
+    handle: &mut client::Handle<TrustAll>,
+    ladder: &[Option<HashAlg>],
+    budget: &mut u32,
+    notes: &mut Vec<String>,
+) -> bool {
+    let Some(mut agent) = connect_agent().await else {
+        return false;
+    };
+    let ids = match agent.request_identities().await {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let mut refused = 0u32;
+    for pubkey in ids.iter().take(MAX_AGENT_KEYS) {
+        let mut ok = false;
+        for alg in ladder {
+            if *budget == 0 {
+                break;
+            }
+            *budget -= 1;
+            match handle
+                .authenticate_publickey_with("root", pubkey.clone(), *alg, &mut agent)
+                .await
+            {
+                Ok(AuthResult::Success) => {
+                    ok = true;
+                    break;
+                }
+                _ => continue,
+            }
+        }
+        if ok {
+            return true;
+        }
+        refused += 1;
+    }
+    if refused > 0 {
+        notes.push(format!("agent: {refused} refused"));
+    }
+    false
 }
 
 struct TrustAll;
@@ -92,34 +333,152 @@ pub async fn run_shell_blocks(
         Ok(Err(e)) => return fail(format!("ssh connect failed: {e}"), -1),
         Err(_) => return fail("ssh connect timed out".to_string(), -1),
     };
-    let auth_result = match auth {
-        SshAuth::Password(pw) => handle.authenticate_password("root", pw).await,
-        SshAuth::KeyFile(path) => {
-            let key = match russh::keys::load_secret_key(&path, None) {
-                Ok(k) => k,
-                Err(e) => {
-                    return fail(
-                        format!("ssh key not found: {} ({e})", path.display()),
-                        -1,
-                    )
-                }
-            };
-            handle
-                .authenticate_publickey(
-                    "root",
-                    russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), None),
-                )
-                .await
-        }
+    // Server-advertised RSA hash when available (OpenSSH sends
+    // server-sig-algs; the Kobo does). Legacy ladder otherwise —
+    // best_supported waits <=1s for EXT_INFO that never comes.
+    let rsa_ladder: Vec<Option<HashAlg>> = match handle.best_supported_rsa_hash().await {
+        Ok(Some(alg)) => vec![alg],
+        _ => vec![Some(HashAlg::Sha512), None],
     };
-    match auth_result {
-        Ok(AuthResult::Success) => {}
-        _ => {
-            return fail(
-                format!("SSH password rejected for {ip} — check Settings → Kobo."),
-                255,
-            )
+
+    // Combined auth: deliberate credentials first (explicit file,
+    // user-typed password, the user's own ssh_config), ambient after
+    // (agent, conventional defaults).
+    let mut budget: u32 = MAX_AUTH_REQUESTS;
+    let mut notes: Vec<String> = Vec::new();
+    let mut tried_paths: Vec<PathBuf> = Vec::new();
+    let mut tried_names: Vec<String> = Vec::new();
+    let mut authed = false;
+
+    // Offer one file: dedup, load, spend budget. Missing ambient files
+    // are normal (most hosts lack one of the three) and stay silent;
+    // only offered keys appear in the failure report.
+    async fn offer_file(
+        handle: &mut client::Handle<TrustAll>,
+        ladder: &[Option<HashAlg>],
+        budget: &mut u32,
+        tried_paths: &mut Vec<PathBuf>,
+        tried_names: &mut Vec<String>,
+        cand: &Path,
+    ) -> bool {
+        if tried_paths.iter().any(|t| t.as_path() == cand) {
+            return false;
         }
+        tried_paths.push(cand.to_path_buf());
+        let Some(key) = load_key(cand) else {
+            return false;
+        };
+        tried_names.push(key_label(cand));
+        try_key_file(handle, &key, ladder, budget).await
+    }
+
+    // ssh_config IdentityFiles for this host (cheap, local).
+    let cfg_files: Vec<PathBuf> = ssh_config_text()
+        .map(|t| {
+            config_identity_files(&t, ip)
+                .into_iter()
+                .map(|s| expand_ssh_path(&s))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // 1. explicit file (the KeyFile variant doubles as the long-standing
+    // default when callers pass default_key_file()).
+    if let SshAuth::KeyFile(p) = &auth {
+        if load_key(p).is_none() {
+            notes.push(format!("{} unreadable", key_label(p)));
+        }
+        if offer_file(
+            &mut handle,
+            &rsa_ladder,
+            &mut budget,
+            &mut tried_paths,
+            &mut tried_names,
+            p,
+        )
+        .await
+        {
+            authed = true;
+        }
+    }
+    // 2. user-typed password (Settings row / KOBO_PASSWORD).
+    if !authed {
+        if let SshAuth::Password(pw) = &auth {
+            if budget == 0 {
+                notes.push("stopped: attempt budget spent".to_string());
+            } else {
+                budget -= 1;
+                match handle.authenticate_password("root", pw).await {
+                    Ok(AuthResult::Success) => authed = true,
+                    _ => notes.push("password rejected".to_string()),
+                }
+            }
+        }
+    }
+    // 3. the user's own ssh_config.
+    if !authed {
+        for cand in &cfg_files {
+            if budget == 0 {
+                notes.push("stopped: attempt budget spent".to_string());
+                break;
+            }
+            if offer_file(
+                &mut handle,
+                &rsa_ladder,
+                &mut budget,
+                &mut tried_paths,
+                &mut tried_names,
+                cand,
+            )
+            .await
+            {
+                authed = true;
+                break;
+            }
+        }
+    }
+    // 4. ssh-agent.
+    if !authed
+        && budget > 0
+        && try_agent_identities(&mut handle, &rsa_ladder, &mut budget, &mut notes).await
+    {
+        authed = true;
+    }
+    // 5. conventional defaults.
+    if !authed {
+        for cand in &default_key_files() {
+            if budget == 0 {
+                notes.push("stopped: attempt budget spent".to_string());
+                break;
+            }
+            if offer_file(
+                &mut handle,
+                &rsa_ladder,
+                &mut budget,
+                &mut tried_paths,
+                &mut tried_names,
+                cand,
+            )
+            .await
+            {
+                authed = true;
+                break;
+            }
+        }
+    }
+    if !authed {
+        if !tried_names.is_empty() {
+            notes.push(format!("keys tried: {}", tried_names.join(", ")));
+        }
+        let detail = if notes.is_empty() {
+            "no credentials offered".to_string()
+        } else {
+            notes.join("; ")
+        };
+        return fail(
+            format!("SSH auth failed for {ip} ({detail}) — check Settings → Kobo."),
+            255,
+        );
     }
     let mut channel = match handle.channel_open_session().await {
         Ok(c) => c,
@@ -204,5 +563,71 @@ mod tests {
             split_trailer("ok\r\nKOBO_EXIT_2:7\r\n", "KOBO_EXIT_2"),
             Some(("ok".to_string(), 7))
         );
+    }
+
+    #[test]
+    fn default_key_order_prefers_ed25519() {
+        assert_eq!(default_key_names(), ["id_ed25519", "id_rsa", "id_ecdsa"]);
+    }
+
+    #[test]
+    fn host_pat_exact_and_case() {
+        assert!(host_pat_matches("192.168.1.75", "192.168.1.75"));
+        assert!(!host_pat_matches("192.168.1.74", "192.168.1.75"));
+        assert!(host_pat_matches("KOBO", "kobo"));
+    }
+
+    #[test]
+    fn host_pat_wildcards() {
+        assert!(host_pat_matches("*", "anything"));
+        assert!(host_pat_matches("192.168.1.*", "192.168.1.75"));
+        assert!(!host_pat_matches("192.168.2.*", "192.168.1.75"));
+        assert!(host_pat_matches("kobo?", "kobo2"));
+        assert!(!host_pat_matches("kobo?", "kobo22"));
+        assert!(host_pat_matches("a*b*c", "axbyc"));
+    }
+
+    #[test]
+    fn config_global_and_host() {
+        let cfg = "IdentityFile ~/.ssh/global_rsa\nHost kobo\n  IdentityFile ~/.ssh/kobo_ed\n";
+        assert_eq!(
+            config_identity_files(cfg, "kobo"),
+            vec!["~/.ssh/global_rsa".to_string(), "~/.ssh/kobo_ed".to_string()]
+        );
+        assert_eq!(
+            config_identity_files(cfg, "other"),
+            vec!["~/.ssh/global_rsa".to_string()]
+        );
+    }
+
+    #[test]
+    fn config_wildcard_negation_match_ignored() {
+        let cfg = "Host *.lan\n  IdentityFile ~/.ssh/lan_key\nHost bad\n  IdentityFile ~/.ssh/nope\nHost !blocked.lan *.lan\n  IdentityFile ~/.ssh/star\nMatch host kobo\n  IdentityFile ~/.ssh/match_key\n";
+        assert!(config_identity_files(cfg, "kobo.lan").contains(&"~/.ssh/lan_key".to_string()));
+        assert!(config_identity_files(cfg, "kobo.lan").contains(&"~/.ssh/star".to_string()));
+        assert!(!config_identity_files(cfg, "kobo.lan").contains(&"~/.ssh/nope".to_string()));
+        assert!(!config_identity_files(cfg, "kobo.lan").contains(&"~/.ssh/match_key".to_string()));
+        assert!(!config_identity_files(cfg, "blocked.lan").contains(&"~/.ssh/star".to_string()));
+    }
+
+    #[test]
+    fn config_equals_quoted_forms() {
+        let cfg = "Host kobo\n  IdentityFile=~/.ssh/eq_rsa\n  identityfile \"~/.ssh/quoted\"\n";
+        assert_eq!(
+            config_identity_files(cfg, "kobo"),
+            vec!["~/.ssh/eq_rsa".to_string(), "~/.ssh/quoted".to_string()]
+        );
+    }
+
+    #[test]
+    fn expand_tilde() {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
+        assert_eq!(
+            expand_ssh_path("~/.ssh/id_rsa"),
+            PathBuf::from(&home).join(".ssh").join("id_rsa")
+        );
+        assert_eq!(expand_ssh_path("/abs/key"), PathBuf::from("/abs/key"));
     }
 }

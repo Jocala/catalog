@@ -151,8 +151,8 @@ void CatalogStore::openOnKobo(qint64 id, const QString &title, const QString &au
     m_pendingHandoff = {id, title, author, ip};
     m_handoffBusy = true;
     emit statusChanged("Checking Kobo stacking fix…", true, false);
-    QFuture<QJsonObject> f = QtConcurrent::run([ip]() {
-        return KoboJob::handoffCheck(ip);
+    QFuture<QJsonObject> f = QtConcurrent::run([ip, pw = m_settings.koboPassword(ip)]() {
+        return KoboJob::handoffCheck(ip, pw);
     });
     QFutureWatcher<QJsonObject> *w = new QFutureWatcher<QJsonObject>(this);
     connect(w, &QFutureWatcher<QJsonObject>::finished, this,
@@ -171,8 +171,8 @@ void CatalogStore::onHandoffChecked() {
     if (w) w->deleteLater();
     HandoffOpen p = m_pendingHandoff;
     if (o.value("status").toString() == "failed" || o.value("code").toInt(-1) != 0) {
-        // Can't verify (Kobo asleep? password-only login — the check is
-        // key-only BatchMode). Don't nag; ask never again, just open.
+        // Can't verify (Kobo asleep or unreachable — auth failures land
+        // here too). Don't nag; ask never again, just open.
         m_handoffBusy = false;
         markHandoffPromptDone();
         proceedOpenKobo(p.id, p.title, p.author, p.ip);
@@ -197,8 +197,9 @@ void CatalogStore::answerHandoff(bool install) {
     }
     emit statusChanged("Installing Kobo stacking fix…", true, false);
     QString ip = p.ip;
-    QFuture<QJsonObject> f = QtConcurrent::run([ip]() {
-        return KoboJob::handoffEnsure(ip);
+    QString pw = m_settings.koboPassword(ip);
+    QFuture<QJsonObject> f = QtConcurrent::run([ip, pw]() {
+        return KoboJob::handoffEnsure(ip, pw);
     });
     QFutureWatcher<QJsonObject> *w = new QFutureWatcher<QJsonObject>(this);
     connect(w, &QFutureWatcher<QJsonObject>::finished, this,

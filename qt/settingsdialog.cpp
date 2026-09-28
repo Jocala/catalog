@@ -198,7 +198,8 @@ SettingsDialog::SettingsDialog(AppSettings settings, QWidget *parent)
                     QString("Stacking fix failed on %1: %2").arg(ip, msg.left(120)));
             }
         });
-        w->setFuture(QtConcurrent::run([ip]() { return KoboJob::handoffEnsure(ip); }));
+        QString pw = m_settings.koboPassword(ip);
+        w->setFuture(QtConcurrent::run([ip, pw]() { return KoboJob::handoffEnsure(ip, pw); }));
     });
     addRow->addWidget(addBtn);
     addRow->addWidget(fixBtn);

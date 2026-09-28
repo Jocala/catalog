@@ -1,7 +1,8 @@
 //! Handoff — stacking fix without KOReader source (black-box OCP).
 //!
-//! Generation is pure; I/O is via `super::kobo::ssh_sync` (ssh -T heredoc).
-//! All shell fragments are `sh` compatible with busybox on Kobo.
+//! Generation is pure; I/O is via `super::ssh::run_shell_blocks`
+//! (shell channel). All shell fragments are `sh` compatible with
+//! busybox on Kobo.
 
 pub const HANDOFF_SHELL_GUARD: &str = concat!(
     "if pidof reader.lua >/dev/null 2>&1; then\n",

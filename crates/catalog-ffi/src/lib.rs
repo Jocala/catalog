@@ -784,9 +784,10 @@ pub extern "C" fn catalog_kobo_match(
     })
 }
 
-/// russh shell-exec spike: config `{"ip","cmd","timeout_secs",
-/// "password","key_file"}`. Empty password falls back to the key file
-/// (default `~/.ssh/id_ed25519`). Returns
+/// russh shell-exec: config `{"ip","cmd","timeout_secs",
+/// "password","key_file"}`. Auth walks the explicit file, the password,
+/// ssh_config identities, the agent, then conventional `~/.ssh`
+/// identities — stopping at the first success, like `ssh` itself. Returns
 /// `{"ok":{"output":...,"code":...}}` — 0 ok, 255 auth rejection,
 /// 124 overrun, -1 transport failure. Mirrors SSH.NET `SshSync`.
 #[no_mangle]
@@ -820,7 +821,8 @@ pub extern "C" fn catalog_kobo_ssh(config_json: *const c_char) -> *mut c_char {
 /// Config: `{"ip","password","key_file","title","author","book_id",
 /// "timeout_secs"}` plus the library `file_source` shape when Sync & Open
 /// size consent matters (`book_id` fetches the EPUB size for `Missing`).
-/// Empty password falls back to the key file. Returns the outcome object:
+/// Auth resolves like `ssh` itself (explicit file, password, ssh_config,
+/// agent, default identities). Returns the outcome object:
 /// `{"status":"opened"|"missing"|"ambiguous"|"failed", ...}` — shells map
 /// statuses to dialogs exactly like the Swift/C# ports.
 #[no_mangle]
@@ -918,40 +920,69 @@ pub extern "C" fn catalog_abi() -> *mut c_char {
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub extern "C" fn catalog_kobo_handoff_check(config_kobo_ip: *const c_char) -> *mut c_char {
+pub extern "C" fn catalog_kobo_handoff_check(config_json: *const c_char) -> *mut c_char {
     run(|| {
-        let ip = c_str(config_kobo_ip)?;
+        let raw = c_str(config_json)?;
+        let v: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
+        let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let ip = s("ip");
         if ip.trim().is_empty() {
             return Err("not configured: Kobo IP".to_string());
         }
+        let pw = s("password");
+        let kf = s("key_file");
+        let auth = if !pw.is_empty() {
+            kobo::ssh::SshAuth::Password(pw)
+        } else if !kf.is_empty() {
+            kobo::ssh::SshAuth::KeyFile(kf.into())
+        } else {
+            kobo::ssh::SshAuth::KeyFile(kobo::ssh::default_key_file())
+        };
         let check = kobo::handoff::is_handoff_check_cmd();
-        let out = runtime().block_on(kobo::ssh_sync(&ip, &check, 6));
+        let out = runtime().block_on(kobo::ssh::ssh_sync_russh(&ip, &check, 6, auth));
         let installed = out.output.contains("ok");
         Ok(serde_json::json!({"installed": installed, "output": out.output, "code": out.code}))
     })
 }
 
 #[no_mangle]
-pub extern "C" fn catalog_kobo_handoff_ensure(config_kobo_ip: *const c_char) -> *mut c_char {
+pub extern "C" fn catalog_kobo_handoff_ensure(config_json: *const c_char) -> *mut c_char {
     run(|| {
-        let ip = c_str(config_kobo_ip)?;
+        let raw = c_str(config_json)?;
+        let v: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
+        let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let ip = s("ip");
         if ip.trim().is_empty() {
             return Err("not configured: Kobo IP".to_string());
         }
+        let pw = s("password");
+        let kf = s("key_file");
+        // Auth outlives several commands here, so it is rebuilt per call.
+        let auth_of = || {
+            if !pw.is_empty() {
+                kobo::ssh::SshAuth::Password(pw.clone())
+            } else if !kf.is_empty() {
+                kobo::ssh::SshAuth::KeyFile(kf.clone().into())
+            } else {
+                kobo::ssh::SshAuth::KeyFile(kobo::ssh::default_key_file())
+            }
+        };
         // check first
         let check = kobo::handoff::is_handoff_check_cmd();
-        let cur = runtime().block_on(kobo::ssh_sync(&ip, &check, 6));
+        let cur = runtime().block_on(kobo::ssh::ssh_sync_russh(&ip, &check, 6, auth_of()));
         if cur.output.contains("ok") {
             return Ok(serde_json::json!({"state": "already", "output": cur.output}));
         }
-        for cmd in kobo::handoff::install_cmds() {
-            let r = runtime().block_on(kobo::ssh_sync(&ip, &cmd, 10));
-            if r.code != 0 {
-                return Err(format!("handoff install failed: {}", r.output));
-            }
+        // install streams all blocks over one shell channel (30s total).
+        let cmds = kobo::handoff::install_cmds();
+        let r = runtime().block_on(kobo::ssh::run_shell_blocks(&ip, &cmds, 30, auth_of()));
+        if r.code != 0 {
+            return Err(format!("handoff install failed: {}", r.output));
         }
         // verify
-        let verify = runtime().block_on(kobo::ssh_sync(&ip, &check, 6));
+        let verify = runtime().block_on(kobo::ssh::ssh_sync_russh(&ip, &check, 6, auth_of()));
         if verify.output.contains("ok") {
             Ok(serde_json::json!({"state": "installed", "output": verify.output}))
         } else {
