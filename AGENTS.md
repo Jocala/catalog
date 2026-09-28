@@ -157,6 +157,13 @@ update-enabled installs at once — no staged rollout.
   password, 255-reject, timeout, user-cancel mid-sync.
 - win11 carries the mac keypair for passwordless Kobo SSH (same as
   win10/mac). debian keypair placed 2026-09-22 for the Linux port.
+- Second Kobo (`kobo2.lan`) at `.75`: its `authorized_keys` holds only
+  the Mac RSA key, so it is the device that proved the combined-auth
+  engine (explicit file, password, ssh_config, agent, defaults; RSA
+  SHA-2 with SHA-1 fallback). 2026-09-27: Mac `id_rsa` copied to
+  win11 `~/.ssh/` (ACLs locked via `icacls`) for Windows testing.
+  Dropbear/SSHD here swallows EXEC — shell channel only (see
+  `kobo/ssh.rs`); Win32 `ssh.exe` hangs against it, russh does not.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
