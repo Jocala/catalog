@@ -167,6 +167,13 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
+- Catalog 1.06 LIVE 2026-09-28: EXE 16258994 + DMG 42773183
+  signed/notarized/stapled + TGZ 14005743; chunked resumable Kobo sync
+  (1MB verified chunks, retry resumes instead of restarting), sync
+  progress in the book dialog (MB counter + stall callout), drain-while-
+  send transport, AppleDouble ignore in Kobo matching, gallery spinner
+  fix. Staging commit `0c1775c`; GitHub release `v1.06` carries all
+  three installers.
 - Catalog 1.05 LIVE 2026-09-28: EXE 16269217 + DMG 42771547
   signed/notarized/stapled + TGZ 13968901; Kobo SSH fully Rust
   (explicit file, password, ssh_config, agent, default identities;
