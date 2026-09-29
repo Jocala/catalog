@@ -48,7 +48,7 @@ fn last_name(author: &str) -> String {
 async fn find_books(ip: &str, auth: &SshAuth) -> Result<Vec<String>, (String, i32)> {
     let list = run_shell_blocks(
         ip,
-        &["find /mnt/onboard -type f \\( -name \"*.kepub.epub\" -o -name \"*.epub\" \\) -not -path \"*/.kobo/*\" | sort".to_string()],
+        &["find /mnt/onboard -type f \\( -name \"*.kepub.epub\" -o -name \"*.epub\" \\) -not -path \"*/.kobo/*\" -not -name \"._*\" | sort".to_string()],
         30,
         auth.clone(),
     )

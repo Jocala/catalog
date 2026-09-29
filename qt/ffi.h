@@ -36,6 +36,9 @@ char *catalog_kobo_match(const char *candidates_json, const char *title,
                          const char *author);
 char *catalog_kobo_open(const char *config_json);
 char *catalog_kobo_sync(const char *config_json);
+// Sync progress readout: {"ok":{"done":N,"total":M}} decoded bytes.
+// (0,0) while fetching (no total yet); cheap atomic read, safe to poll.
+char *catalog_kobo_progress(void);
 char *catalog_kobo_ssh(const char *config_json);
 char *catalog_kobo_handoff_check(const char *config_json);
 char *catalog_kobo_handoff_ensure(const char *config_json);

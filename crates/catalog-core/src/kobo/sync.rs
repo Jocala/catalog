@@ -1,12 +1,24 @@
 //! Kobo WiFi sync (port of Swift `KoboSync`): fetch a book's EPUB from
-//! the Calibre library, push it over the shell channel as a base64
-//! heredoc (stock Kobo has no sftp/scp; raw binary on shared stdin
+//! the Calibre library, push it over the shell channel as base64
+//! heredocs (stock Kobo has no sftp/scp; raw binary on shared stdin
 //! races the shell), size-verify, atomic `.part` + `mv`, then open.
 //! New-file-only, guarded re-check — mirrors the Swift sequence.
+//!
+//! Chunked + resumable (2026-09-28): the old single-heredoc push sent a
+//! whole book (47 MB of base64 for a 35 MB EPUB) through one shell
+//! invocation — busybox ash buffers the entire heredoc before `base64 -d`
+//! even starts, and at the observed Kobo rate (~40 KB/s) anything over a
+//! few MB outran the timeout with nothing kept. Now each 1 MiB decoded
+//! chunk rides its own connection + heredoc with a per-chunk deadline and
+//! cumulative size check; the `.part` is kept on failure so a retry (or a
+//! force-quit + retry) resumes from the last whole chunk instead of zero.
+//! Progress (`done`, `total` decoded bytes) is published to statics the
+//! FFI `catalog_kobo_progress` getter reads for the shell's status bar.
 
 use super::open::OpenOutcome;
 use super::ssh::{run_shell_blocks, SshAuth};
 use crate::db::FileSource;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug)]
 pub enum SyncError {
@@ -57,6 +69,49 @@ pub fn base64_lines(data: &[u8]) -> Vec<String> {
 
 fn esc(s: &str) -> String {
     s.replace('\'', "'\\''")
+}
+
+/// Sync progress for the shell status bar (`catalog_kobo_progress` reads
+/// these): decoded bytes landed on the Kobo vs total. Relaxed ordering —
+/// single writer (the sync worker), polled readers.
+static SYNC_DONE: AtomicU64 = AtomicU64::new(0);
+static SYNC_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+/// `(done, total)` decoded bytes for the in-flight (or last) push.
+pub fn progress() -> (u64, u64) {
+    (SYNC_DONE.load(Ordering::Relaxed), SYNC_TOTAL.load(Ordering::Relaxed))
+}
+
+fn set_progress(done: u64, total: u64) {
+    SYNC_DONE.store(done, Ordering::Relaxed);
+    SYNC_TOTAL.store(total, Ordering::Relaxed);
+}
+
+/// Cumulative channel-phase millis since the sync started (connect, auth,
+/// xfer) — the `[kobo]` log line's stall attribution. Reset with progress.
+pub fn phase_ms() -> (u64, u64, u64) {
+    super::ssh::phase_ms()
+}
+
+/// 1 MiB decoded per chunk: one SSH connection + heredoc each, so a stall
+/// fails fast (one chunk deadline) with everything so far kept for resume.
+/// Small enough that busybox ash buffers it comfortably; large enough that
+/// auth overhead (~1s/chunk) stays trivial.
+const CHUNK: u64 = 1_048_576;
+/// Per-chunk deadline: at the worst observed Kobo rate (~40 KB/s) a full
+/// chunk lands in ~26s + auth; 120s is the backstop, not the budget.
+const CHUNK_TIMEOUT: u64 = 120;
+
+/// Resume decision for an existing `.part` of `existing` bytes against a
+/// `need`-byte push: the byte offset to continue from, or `None` when the
+/// partial can't be trusted (overshoot, or a torn trailing chunk) and the
+/// caller must restart from zero. `Some(need)` means already complete.
+fn resume_offset(existing: u64, need: u64) -> Option<u64> {
+    if existing > need || !existing.is_multiple_of(CHUNK) {
+        None
+    } else {
+        Some(existing)
+    }
 }
 
 pub struct EpubBlob {
@@ -165,26 +220,27 @@ async fn push_bytes(
     bytes: &[u8],
     auth: &SshAuth,
 ) -> Result<(), SyncError> {
-    let need = bytes.len() as i64;
+    let need = bytes.len() as u64;
     // 1. Free-space guard (+1MB margin).
     let df = run_shell_blocks(ip, &["df -k /mnt/onboard | tail -n 1".to_string()], 10, auth.clone()).await;
     if df.code != 0 {
         return Err(SyncError::Transport(df.output));
     }
     let fields: Vec<&str> = df.output.split_whitespace().collect();
-    let avail_kb: i64 = fields.get(3).and_then(|f| f.parse().ok()).unwrap_or(0);
+    let avail_kb: u64 = fields.get(3).and_then(|f| f.parse().ok()).unwrap_or(0);
     if avail_kb * 1024 < need + 1_048_576 {
         return Err(SyncError::StorageFull);
     }
-    // 2. Author dir + don't clobber; clear stale .part.
+    // 2. Author dir + don't clobber. A `.part` from an interrupted push
+    // is resume fuel, not garbage — only a torn trailing chunk (or an
+    // overshoot, which should be impossible) forces a restart.
     let dir = predicted.rfind('/').map(|i| &predicted[..i]).unwrap_or("");
     let part = format!("{predicted}.part");
     let prep = run_shell_blocks(
         ip,
         &[format!(
-            "mkdir -p '{}' && rm -f '{}' && if [ -f '{}' ]; then echo present; else echo absent; fi",
+            "mkdir -p '{}' && if [ -f '{}' ]; then echo present; else echo absent; fi",
             esc(dir),
-            esc(&part),
             esc(predicted)
         )],
         10,
@@ -197,36 +253,96 @@ async fn push_bytes(
     if prep.output.contains("present") {
         return Err(SyncError::AlreadyThere);
     }
-    // 3. Base64 heredoc push (delimiter outside the b64 alphabet, so
-    // payload lines can never collide), size-verify, atomic mv.
-    // Delimiter uses underscores (outside the base64 alphabet), so payload
-    // lines can never collide with it.
-    let mut blocks = vec![format!("base64 -d > '{}' <<'KOBO_EOF_DONE'", esc(&part))];
-    let mut acc = String::new();
-    for line in base64_lines(bytes) {
-        acc.push_str(&line);
-        acc.push('\n');
-        if acc.len() >= 65536 {
-            blocks.push(acc.clone());
-            acc.clear();
+    let size_probe = run_shell_blocks(
+        ip,
+        &[format!("if [ -f '{}' ]; then wc -c < '{}'; else echo 0; fi", esc(&part), esc(&part))],
+        10,
+        auth.clone(),
+    )
+    .await;
+    if size_probe.code != 0 {
+        return Err(SyncError::Transport(size_probe.output));
+    }
+    let existing: u64 = size_probe
+        .output
+        .lines()
+        .filter_map(|l| l.trim().parse::<u64>().ok())
+        .next_back()
+        .unwrap_or(0);
+    let start = match resume_offset(existing, need) {
+        Some(off) => off,
+        None => {
+            let _ = run_shell_blocks(ip, &[format!("rm -f '{}'", esc(&part))], 10, auth.clone()).await;
+            0
         }
+    };
+    set_progress(start, need);
+    // 3. Chunked base64 heredoc push: one connection per 1 MiB decoded,
+    // cumulative size check after each. Delimiter uses underscores (outside
+    // the base64 alphabet), so payload lines can never collide with it.
+    let mut offset = start;
+    while offset < need {
+        let end = (offset + CHUNK).min(need);
+        let mut blocks = vec![format!("base64 -d >> '{}' <<'KOBO_CHUNK_DONE'", esc(&part))];
+        let mut acc = String::new();
+        for line in base64_lines(&bytes[offset as usize..end as usize]) {
+            acc.push_str(&line);
+            acc.push('\n');
+            if acc.len() >= 65536 {
+                blocks.push(std::mem::take(&mut acc));
+            }
+        }
+        if !acc.is_empty() {
+            blocks.push(std::mem::take(&mut acc));
+        }
+        blocks.push("KOBO_CHUNK_DONE".to_string());
+        blocks.push(format!("n=$(wc -c < '{}'); echo \"chunk:$n\"", esc(&part)));
+        let push = run_shell_blocks(ip, &blocks, CHUNK_TIMEOUT, auth.clone()).await;
+        if push.code == 124 {
+            return Err(SyncError::Transport(format!(
+                "{} (chunk timed out at {offset}/{need} bytes — retry resumes)",
+                push.output.chars().take(200).collect::<String>()
+            )));
+        }
+        let landed: u64 = push
+            .output
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("chunk:"))
+            .filter_map(|v| v.trim().parse::<u64>().ok())
+            .next_back()
+            .unwrap_or(u64::MAX);
+        if push.code != 0 || landed != end {
+            return Err(SyncError::Transport(format!(
+                "Kobo kept {landed} of {end} bytes — retry resumes ({offset}/{need} done)"
+            )));
+        }
+        offset = end;
+        set_progress(offset, need);
     }
-    if !acc.is_empty() {
-        blocks.push(acc);
+    // 4. Size-verify + atomic mv (unchanged semantics: the final path
+    // appears all at once, never half-written). Per-chunk checks already
+    // passed, so this is the belt-and-suspenders gate — and the `.part`
+    // stays for resume even here.
+    let fin = run_shell_blocks(
+        ip,
+        &[format!(
+            "n=$(wc -c < '{}'); if [ \"$n\" -eq {need} ]; then mv '{}' '{}' && echo \"moved:$n\"; else echo \"size-mismatch:$n\"; exit 1; fi",
+            esc(&part),
+            esc(&part),
+            esc(predicted)
+        )],
+        30,
+        auth.clone(),
+    )
+    .await;
+    if fin.code != 0 || !fin.output.contains("moved:") {
+        return Err(SyncError::Transport(format!(
+            "{} — retry resumes",
+            fin.output.chars().take(250).collect::<String>()
+        )));
     }
-    blocks.push("KOBO_EOF_DONE".to_string());
-    blocks.push(format!(
-        "n=$(wc -c < '{}'); if [ \"$n\" -eq {need} ]; then mv '{}' '{}' && echo \"moved:$n\"; else rm -f '{}'; echo \"size-mismatch:$n\"; exit 1; fi",
-        esc(&part),
-        esc(&part),
-        esc(predicted),
-        esc(&part)
-    ));
-    let push = run_shell_blocks(ip, &blocks, 180, auth.clone()).await;
-    if push.code != 0 || !push.output.contains("moved:") {
-        return Err(SyncError::Transport(push.output));
-    }
-    // 4. Index cache learns the new path.
+    set_progress(need, need);
+    // 5. Index cache learns the new path.
     let mut paths = super::cached_paths().unwrap_or_default();
     if !paths.iter().any(|p| p == predicted) {
         paths.push(predicted.to_string());
@@ -243,6 +359,8 @@ pub async fn sync_and_open(
     ip: &str,
     auth: SshAuth,
 ) -> OpenOutcome {
+    set_progress(0, 0); // fetch phase: alive, no total yet (bar runs busy)
+    super::ssh::reset_phase_ms();
     let blob = match epub_for_book(src, book_id).await {
         Ok(b) => b,
         Err(e) => {
@@ -281,6 +399,26 @@ mod tests {
         assert_eq!(lines[0].len(), 76);
         let lines2 = base64_lines(&[b'a'; 58]);
         assert_eq!(lines2.len(), 2);
+    }
+
+    #[test]
+    fn resume_offset_vectors() {
+        // Fresh: start at zero. Whole chunks: continue. Exact: done.
+        assert_eq!(resume_offset(0, 100), Some(0));
+        assert_eq!(resume_offset(CHUNK, 3 * CHUNK), Some(CHUNK));
+        assert_eq!(resume_offset(3 * CHUNK, 3 * CHUNK), Some(3 * CHUNK));
+        // Torn trailing chunk or overshoot: restart, never append mid-chunk.
+        assert_eq!(resume_offset(100, 3 * CHUNK), None);
+        assert_eq!(resume_offset(CHUNK + 7, 3 * CHUNK), None);
+        assert_eq!(resume_offset(4 * CHUNK, 3 * CHUNK), None);
+    }
+
+    #[test]
+    fn progress_roundtrip() {
+        set_progress(7, 42);
+        assert_eq!(progress(), (7, 42));
+        set_progress(0, 0);
+        assert_eq!(progress(), (0, 0));
     }
 
     #[test]

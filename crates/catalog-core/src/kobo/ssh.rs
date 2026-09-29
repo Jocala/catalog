@@ -308,6 +308,34 @@ pub fn split_trailer(buf: &str, marker: &str) -> Option<(String, i32)> {
 
 static MARK_CTR: AtomicU64 = AtomicU64::new(0);
 
+/// Cumulative phase timings (ms) across `run_shell_blocks` calls: TCP+KEX
+/// connect, credential auth walk, and the channel phase (writes + drain +
+/// trailer wait). Reset per sync (`reset_phase_ms`); read back for the
+/// shell's `[kobo]` log line (`phase_ms`). Diagnostics only.
+static T_CONNECT_MS: AtomicU64 = AtomicU64::new(0);
+static T_AUTH_MS: AtomicU64 = AtomicU64::new(0);
+static T_XFER_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Zero the phase clocks (sync start).
+pub fn reset_phase_ms() {
+    T_CONNECT_MS.store(0, Ordering::Relaxed);
+    T_AUTH_MS.store(0, Ordering::Relaxed);
+    T_XFER_MS.store(0, Ordering::Relaxed);
+}
+
+/// `(connect, auth, xfer)` cumulative millis since the last reset.
+pub fn phase_ms() -> (u64, u64, u64) {
+    (
+        T_CONNECT_MS.load(Ordering::Relaxed),
+        T_AUTH_MS.load(Ordering::Relaxed),
+        T_XFER_MS.load(Ordering::Relaxed),
+    )
+}
+
+fn stamp(stat: &AtomicU64, since: std::time::Instant) {
+    stat.fetch_add(u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX), Ordering::Relaxed);
+}
+
 /// Run pre-formed shell blocks, then the `MARK:$?` trailer, on one
 /// shell channel. Blocks stream as plain text (base64 payloads ride
 /// here — never raw binary on shared stdin). One invocation.
@@ -318,6 +346,7 @@ pub async fn run_shell_blocks(
     auth: SshAuth,
 ) -> SshResult {
     let fail = |output: String, code: i32| SshResult { output, code };
+    let t0 = std::time::Instant::now();
     let addr: std::net::SocketAddr = match format!("{ip}:22").parse() {
         Ok(a) => a,
         Err(_) => return fail(format!("bad kobo ip: {ip}"), -1),
@@ -333,6 +362,8 @@ pub async fn run_shell_blocks(
         Ok(Err(e)) => return fail(format!("ssh connect failed: {e}"), -1),
         Err(_) => return fail("ssh connect timed out".to_string(), -1),
     };
+    let t1 = std::time::Instant::now();
+    stamp(&T_CONNECT_MS, t0);
     // Server-advertised RSA hash when available (OpenSSH sends
     // server-sig-algs; the Kobo does). Legacy ladder otherwise —
     // best_supported waits <=1s for EXT_INFO that never comes.
@@ -475,48 +506,87 @@ pub async fn run_shell_blocks(
         } else {
             notes.join("; ")
         };
+        stamp(&T_AUTH_MS, t1);
         return fail(
             format!("SSH auth failed for {ip} ({detail}) — check Settings → Kobo."),
             255,
         );
     }
-    let mut channel = match handle.channel_open_session().await {
+    stamp(&T_AUTH_MS, t1);
+    let t3 = std::time::Instant::now();
+    let channel = match handle.channel_open_session().await {
         Ok(c) => c,
-        Err(e) => return fail(format!("ssh channel failed: {e}"), -1),
+        Err(e) => {
+            stamp(&T_XFER_MS, t3);
+            return fail(format!("ssh channel failed: {e}"), -1);
+        }
     };
     if channel.request_shell(true).await.is_err() {
+        stamp(&T_XFER_MS, t3);
         return fail("ssh shell refused".to_string(), -1);
     }
     let marker = format!("KOBO_EXIT_{}_{}", std::process::id(), MARK_CTR.fetch_add(1, Ordering::Relaxed));
-    for block in blocks {
-        let mut lined = block.clone();
-        lined.push('\n');
-        if channel.data(lined.as_bytes()).await.is_err() {
-            return fail("ssh write failed".to_string(), -1);
+    // Drain-while-sending: the old loop wrote every block before reading
+    // anything, while the shell echoes input back. ~1 MB of undrained echo
+    // backpressured the upload to ~50 KB/s (pipe, heredoc+eMMC, and decode
+    // each probed at 1+ MB/s against the same Kobo). Now the writer streams
+    // on the write half while this loop drains the read half from the
+    // first byte; one deadline covers both (writes were previously
+    // unbounded).
+    let (mut rh, wh) = channel.split();
+    let mut payload: Vec<String> = blocks.to_vec();
+    payload.push(format!("echo {marker}:$?\n"));
+    let mut writer = tokio::spawn(async move {
+        for block in &payload {
+            let mut lined = block.clone();
+            lined.push('\n');
+            if wh.data(lined.as_bytes()).await.is_err() {
+                return Err("ssh write failed".to_string());
+            }
         }
-    }
-    let trailer = format!("echo {marker}:$?\n");
-    if channel.data(trailer.as_bytes()).await.is_err() {
-        return fail("ssh write failed".to_string(), -1);
-    }
+        Ok::<(), String>(())
+    });
+    let mut writer_done = false;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs + 10);
     let mut buf = String::new();
     loop {
+        if let Some((out, code)) = split_trailer(&buf, &marker) {
+            stamp(&T_XFER_MS, t3);
+            return fail(out, code);
+        }
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
+            stamp(&T_XFER_MS, t3);
             return fail(format!("{}\n(timed out)", buf.trim()), 124);
         }
-        match tokio::time::timeout(remaining, channel.wait()).await {
-            Ok(Some(ChannelMsg::Data { data })) => {
-                buf.push_str(&String::from_utf8_lossy(&data));
-                if let Some((out, code)) = split_trailer(&buf, &marker) {
-                    return fail(out, code);
+        tokio::select! {
+            msg = rh.wait() => {
+                match msg {
+                    Some(ChannelMsg::Data { data }) => {
+                        buf.push_str(&String::from_utf8_lossy(&data));
+                    }
+                    // Closed/EOF/exit without a trailer: keep polling to
+                    // the deadline (mirrors the SSH.NET deadline loop).
+                    _ => tokio::time::sleep(Duration::from_millis(100)).await,
                 }
             }
-            // Closed/EOF/exit without a trailer: keep polling to the
-            // deadline (mirrors the SSH.NET deadline loop), then 124.
-            Ok(_) => tokio::time::sleep(Duration::from_millis(100)).await,
-            Err(_) => return fail(format!("{}\n(timed out)", buf.trim()), 124),
+            res = &mut writer, if !writer_done => {
+                match res {
+                    Ok(Ok(())) => writer_done = true,
+                    Ok(Err(e)) => {
+                        stamp(&T_XFER_MS, t3);
+                        return fail(e, -1);
+                    }
+                    Err(_) => {
+                        stamp(&T_XFER_MS, t3);
+                        return fail("ssh write failed".to_string(), -1);
+                    }
+                }
+            }
+            _ = tokio::time::sleep(remaining) => {
+                stamp(&T_XFER_MS, t3);
+                return fail(format!("{}\n(timed out)", buf.trim()), 124);
+            }
         }
     }
 }

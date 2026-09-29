@@ -907,6 +907,22 @@ pub extern "C" fn catalog_kobo_sync(config_json: *const c_char) -> *mut c_char {
     })
 }
 
+/// Kobo sync progress (`catalog_kobo_progress`): `{"ok":{"done":N,
+/// "total":M,"t_conn_ms":C,"t_auth_ms":A,"t_xfer_ms":X}}` decoded bytes
+/// landed vs total, plus cumulative channel-phase millis since the sync
+/// started (TCP+KEX connect, auth walk, write+drain+trailer wait).
+/// `(0,0)` during the fetch phase (bar runs busy). Additive readout —
+/// never an error.
+#[no_mangle]
+pub extern "C" fn catalog_kobo_progress() -> *mut c_char {
+    let (done, total) = kobo::sync::progress();
+    let (conn, auth, xfer) = kobo::sync::phase_ms();
+    ok_json(serde_json::json!({
+        "done": done, "total": total,
+        "t_conn_ms": conn, "t_auth_ms": auth, "t_xfer_ms": xfer,
+    }))
+}
+
 /// Opaque helper for shells that need the raw pointer width at compile
 /// time (C# `IntPtr` marshalling asserts). Always `{"ok":{"ptr_size":8}}`
 /// on 64-bit targets.

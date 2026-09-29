@@ -2,7 +2,9 @@
 #include "catalogstore.h"
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
+#include <QJsonObject>
 #include <QPixmap>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QVBoxLayout>
@@ -64,11 +66,20 @@ BookInfoDialog::BookInfoDialog(const BookItem &book, const DetailItem &detail,
     connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
     m_statusLabel = new QLabel(this);
     m_statusLabel->setWordWrap(false);
+    // Sync progress for this book: hidden unless its push is running.
+    // Numbers ride the status label; the bar is deliberately textless.
+    m_koboBar = new QProgressBar(this);
+    m_koboBar->setFixedWidth(140);
+    m_koboBar->setTextVisible(false);
+    m_koboBar->setVisible(false);
     foot->addWidget(readBtn);
     foot->addWidget(closeBtn);
     foot->addWidget(m_statusLabel, 1);
+    foot->addWidget(m_koboBar, 0);
     outer->addLayout(foot);
     connect(m_store, &CatalogStore::statusChanged, this, &BookInfoDialog::onKoboStatus);
+    connect(m_store, &CatalogStore::koboProgress, this, &BookInfoDialog::onKoboProgress);
+    connect(m_store, &CatalogStore::koboOutcome, this, &BookInfoDialog::onKoboOutcome);
 }
 
 void BookInfoDialog::onRead() {
@@ -90,4 +101,40 @@ void BookInfoDialog::onKoboStatus(const QString &text, bool kobo, bool ok) {
     m_statusLabel->setStyleSheet(ok ? "color: green" : "color: orange");
     if (ok)
         accept();
+}
+
+void BookInfoDialog::onKoboProgress(const QString &title, qint64 done, qint64 total) {
+    if (!m_koboBar || title != m_book.title)
+        return; // another book's push (dialogs share one store)
+    if (total <= 0) {
+        // Fetch phase (EPUB off SMB/local, no total yet): alive, busy bar.
+        m_koboBar->setRange(0, 0);
+        m_koboBar->setVisible(true);
+        return;
+    }
+    // Permille range: book bytes overflow an int range, permille never does.
+    m_koboBar->setRange(0, 1000);
+    m_koboBar->setValue((int)(done * 1000 / qMax<qint64>(1, total)));
+    m_koboBar->setVisible(true);
+    if (done != m_koboLastDone) {
+        m_koboLastDone = done;
+        m_koboStall.restart();
+    }
+    auto mb = [](qint64 b) -> QString {
+        return b > 1048576 ? QString("%1 MB").arg(b / 1048576.0, 0, 'f', 1)
+                           : QString("%1 KB").arg(qMax<qint64>(1, b / 1024));
+    };
+    QString text = QString("Syncing — %1 of %2").arg(mb(done), mb(total));
+    if (m_koboStall.isValid() && m_koboStall.elapsed() > 15000 && done < total)
+        text += " (stalled — leave it or force-quit; retry resumes)";
+    m_statusLabel->setText(text);
+    m_statusLabel->setStyleSheet("color: orange");
+}
+
+void BookInfoDialog::onKoboOutcome(const QJsonObject &o) {
+    Q_UNUSED(o);
+    if (m_koboBar)
+        m_koboBar->setVisible(false);
+    m_koboLastDone = -1;
+    m_koboStall.invalidate();
 }

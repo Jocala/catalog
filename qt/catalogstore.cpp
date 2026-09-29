@@ -35,6 +35,8 @@ CatalogStore::CatalogStore(QObject *parent)
     m_log.logHeader(kCatalogVersion, m_settings);
     connect(&m_watcher, &QFutureWatcher<LoadResult>::finished, this, &CatalogStore::onLoaded);
     connect(&m_model, &BookModel::coverNeeded, this, &CatalogStore::onCoverNeeded);
+    m_koboPoll.setInterval(500);
+    connect(&m_koboPoll, &QTimer::timeout, this, &CatalogStore::onKoboPoll);
 }
 
 void CatalogStore::setSettings(const AppSettings &s) {
@@ -252,6 +254,10 @@ void CatalogStore::proceedOpenKobo(qint64 id, const QString &title, const QStrin
 
 void CatalogStore::syncOnKobo(qint64 id, const QString &title) {
     emit statusChanged(QString("Syncing “%1” to Kobo…").arg(title), true, false);
+    m_koboSyncTitle = title;
+    m_koboSyncActive = true;
+    emit koboProgress(title, 0, 0); // fetching: alive, no total yet
+    m_koboPoll.start();
     AppSettings s = m_settings;
     QString ip = resolveKoboIp();
     QFuture<QJsonObject> f = QtConcurrent::run([s, ip, id]() {
@@ -261,13 +267,42 @@ void CatalogStore::syncOnKobo(qint64 id, const QString &title) {
     connect(w, &QFutureWatcher<QJsonObject>::finished, this, [this, w, title]() {
         QJsonObject o = w->result();
         w->deleteLater();
-        if (o.value("status").toString() == "opened")
+        m_koboSyncActive = false;
+        m_koboPoll.stop();
+        // Final progress read for the log line: bytes + where the wall
+        // clock went (connect/auth/xfer splits name the limiter).
+        QJsonObject p = KoboJob::progress();
+        auto secs = [&p](const char *k) {
+            return p.value(k).toDouble(0) / 1000.0;
+        };
+        QString phases = QString("phases conn=%1s auth=%2s xfer=%3s")
+                             .arg(secs("t_conn_ms"), 0, 'f', 1)
+                             .arg(secs("t_auth_ms"), 0, 'f', 1)
+                             .arg(secs("t_xfer_ms"), 0, 'f', 1);
+        qint64 done = (qint64)p.value("done").toDouble(0);
+        qint64 total = (qint64)p.value("total").toDouble(0);
+        if (o.value("status").toString() == "opened") {
             emit statusChanged(QString("Opened on Kobo: %1").arg(title), true, true);
-        else
-            emit statusChanged(QString("Kobo failed: %1").arg(o.value("message").toString().left(160)), true, false);
+            m_log.log("kobo", QString("sync \"%1\" opened %2/%3 bytes %4")
+                                    .arg(title).arg(done).arg(total).arg(phases));
+        } else {
+            QString msg = o.value("message").toString();
+            emit statusChanged(QString("Kobo failed: %1").arg(msg.left(160)), true, false);
+            m_log.log("kobo", QString("sync \"%1\" failed at %2/%3 bytes %4: %5")
+                                    .arg(title).arg(done).arg(total).arg(phases)
+                                    .arg(msg.left(160)));
+        }
         emit koboOutcome(o);
     });
     w->setFuture(f);
+}
+
+void CatalogStore::onKoboPoll() {
+    if (!m_koboSyncActive)
+        return;
+    QJsonObject o = KoboJob::progress();
+    emit koboProgress(m_koboSyncTitle, (qint64)o.value("done").toDouble(0),
+                      (qint64)o.value("total").toDouble(0));
 }
 
 void CatalogStore::startLoad(const QString &kind, const QString &arg1) {
@@ -433,6 +468,14 @@ void CatalogStore::onLoaded() {
     }
     m_loading = false;
     trace(QString("loaded gen=%1 kind=%2 ms=%3").arg(r.gen).arg(r.kind).arg(m_loadClock.elapsed()));
+    // Detail opens a modal dialog inside applyLoad (detailReady): restore
+    // the gallery first so the spinner page doesn't sit behind the dialog
+    // for the whole session. Other kinds must still emit after apply —
+    // the page decision (loadingChanged -> rowCount check) reads the
+    // just-filled model.
+    const bool earlyPage = (r.kind == "detail");
+    if (earlyPage)
+        emit loadingChanged(false);
     // Order matters: the page decision (loadingChanged -> rowCount check)
     // must see the filled model. Emitting first locks a fresh launch onto
     // the empty page even when books arrived — the grid then never shows
@@ -482,7 +525,8 @@ void CatalogStore::onLoaded() {
             msg += " error=" + r.error.left(160);
         m_log.log("diag", msg);
     }
-    emit loadingChanged(false);
+    if (!earlyPage)
+        emit loadingChanged(false);
 }
 
 void CatalogStore::onLoadTimeout(int gen, const QString &kind) {

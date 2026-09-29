@@ -48,6 +48,10 @@ QJsonObject KoboJob::sync(const AppSettings &s, const QString &ip, qint64 bookId
     return outcomeOf(catalog_kobo_sync(raw.constData()));
 }
 
+QJsonObject KoboJob::progress() {
+    return outcomeOf(catalog_kobo_progress());
+}
+
 QJsonObject KoboJob::ssh(const QString &ip, const QString &cmd, const QString &pw,
                          int timeoutSecs) {
     QJsonObject cfg;

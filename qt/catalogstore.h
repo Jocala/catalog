@@ -10,6 +10,7 @@
 #include <QFutureWatcher>
 #include <QObject>
 #include <QSet>
+#include <QTimer>
 
 class CatalogStore : public QObject {
     Q_OBJECT
@@ -41,6 +42,9 @@ signals:
     void dbError(const QString &message);
     void koboOutcome(const QJsonObject &outcome);
     void searchDone(int bookCount, int seriesCount);
+    // Sync progress: title + decoded bytes landed/total ((0,0) = fetching,
+    // bar runs busy). Polled off catalog_kobo_progress while a sync runs.
+    void koboProgress(const QString &title, qint64 done, qint64 total);
     // First-run stacking-fix offer: MainWindow asks Install / Not Now,
     // then calls answerHandoff. Emitted off the load path, never modal here.
     void handoffOffer(const QString &ip);
@@ -69,6 +73,7 @@ private slots:
     void onLoadTimeout(int gen, const QString &kind);
     void onHandoffChecked();
     void onHandoffEnsured();
+    void onKoboPoll();
     void onCoverNeeded(const QString &path);
     void onCoverBatch(const QString &path, QImage img);
     void flushCovers();
@@ -181,6 +186,12 @@ private:
     void proceedOpenKobo(qint64 id, const QString &title, const QString &author,
                          const QString &ip);
     void markHandoffPromptDone();
+    // Sync progress poll: 500ms reads of the lock-free FFI counter while
+    // a sync worker runs. Stopped in the finish handler; the guard makes
+    // a stray tick after the job a no-op.
+    QTimer m_koboPoll;
+    bool m_koboSyncActive = false;
+    QString m_koboSyncTitle;
     QFutureWatcher<LoadResult> m_watcher;
     // Load watchdog: startLoad latches m_loading until onLoaded. If the
     // worker never returns (some FFI stages have no deadline), the window
