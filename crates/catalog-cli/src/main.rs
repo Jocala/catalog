@@ -247,6 +247,7 @@ async fn cmd_library_list(
                         tags: b.tags,
                         cover_hash: String::new(),
                         author_sort: String::new(),
+                        timestamp: b.timestamp,
                     })
                     .collect()
             } else {

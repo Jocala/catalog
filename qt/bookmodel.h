@@ -9,7 +9,9 @@
 class BookModel : public QAbstractListModel {
     Q_OBJECT
 public:
-    enum Roles { TitleRole = Qt::UserRole + 1, AuthorRole, PathRole, CoverRole, IdRole, SeriesRole, SeriesIndexRole, TagsRole, TagTileRole };
+    // TimestampRole is appended last so the existing role values keep
+    // their numbers.
+    enum Roles { TitleRole = Qt::UserRole + 1, AuthorRole, PathRole, CoverRole, IdRole, SeriesRole, SeriesIndexRole, TagsRole, TagTileRole, TimestampRole };
 
     explicit BookModel(QObject *parent = nullptr);
 
@@ -37,6 +39,7 @@ private:
         QString series;
         double seriesIndex = 0;
         QString tags;
+        QString timestamp; // Calibre "date added" (books only; empty on tiles)
         bool tagTile = false;
     };
     QList<Row> m_rows;

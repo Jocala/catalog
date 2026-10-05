@@ -12,4 +12,5 @@ private slots:
     void books();
     void summaries();
     void detail();
+    void seriesInTitle();
 };

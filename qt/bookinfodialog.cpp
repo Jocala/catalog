@@ -36,10 +36,13 @@ BookInfoDialog::BookInfoDialog(const BookItem &book, const DetailItem &detail,
             l->setStyleSheet("color: gray");
         fields->addWidget(l);
     };
-    add(detail.title.isEmpty() ? book.title : detail.title, 14, false);
+    QString headTitle = detail.title.isEmpty() ? book.title : detail.title;
+    QString headSeries = detail.series.isEmpty() ? book.series : detail.series;
+    double headIndex = detail.series.isEmpty() ? book.seriesIndex : detail.seriesIndex;
+    add(displayTitle(headTitle, headSeries, headIndex), 14, false);
     add(detail.author.isEmpty() ? book.author : detail.author, 11, true);
-    if (!detail.series.isEmpty())
-        add(QString("%1 #%2").arg(detail.series).arg(detail.seriesIndex), 10, true);
+    if (!headSeries.isEmpty())
+        add(headSeries, 10, true);
     if (!detail.tags.isEmpty())
         add(detail.tags, 10, true);
     if (!detail.publisher.isEmpty())

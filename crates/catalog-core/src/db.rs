@@ -591,7 +591,8 @@ pub fn fetch_books(
 ) -> Result<Vec<CatalogBook>, CatalogDbError> {
     let mut sql = "SELECT b.id, b.title, b.author_sort, b.path, b.has_cover, b.series_index,
                 (SELECT s.name FROM books_series_link bsl JOIN series s ON s.id = bsl.series WHERE bsl.book = b.id LIMIT 1) AS series,
-                (SELECT group_concat(tg.name, ', ') FROM books_tags_link btl JOIN tags tg ON tg.id = btl.tag WHERE btl.book = b.id) AS tags
+                (SELECT group_concat(tg.name, ', ') FROM books_tags_link btl JOIN tags tg ON tg.id = btl.tag WHERE btl.book = b.id) AS tags,
+                b.timestamp
                 FROM books b"
         .to_string();
     let mut args: Vec<String> = vec![];
@@ -624,12 +625,14 @@ pub fn fetch_books(
             } else {
                 tags_str.split(", ").map(str::to_string).collect()
             };
-            Ok((id, title, author, rel, has_cover != 0, series, series_index as f32, tags))
+            // Trailing column, so the indices above are unchanged.
+            let timestamp: String = col_string_or(row, 8, "");
+            Ok((id, title, author, rel, has_cover != 0, series, series_index as f32, tags, timestamp))
         })
         .map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;
     let mut out = vec![];
     for r in rows {
-        let (id, title, author, rel, has_cover, series, series_index, tags) =
+        let (id, title, author, rel, has_cover, series, series_index, tags, timestamp) =
             r.map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;
         out.push(CatalogBook {
             id,
@@ -641,6 +644,7 @@ pub fn fetch_books(
             series,
             series_index,
             tags,
+            timestamp,
         });
     }
     Ok(out)
@@ -732,16 +736,30 @@ pub fn books_by_series(
     db: &Connection,
     source: &FileSource,
     series_id: i64,
+    sort_descending: bool,
+    by_index: bool,
 ) -> Result<Vec<AuthorBook>, CatalogDbError> {
-    let sql = "SELECT b.id, b.title,
+    // Drilled series grid: Index = series_index ASC (Calibre order);
+    // A–Z / Z–A = title sort (b.sort mirrors the Books root sort).
+    let order = if by_index {
+        "b.series_index".to_string()
+    } else {
+        format!(
+            "b.sort {}",
+            if sort_descending { "DESC" } else { "ASC" }
+        )
+    };
+    let sql = format!(
+        "SELECT b.id, b.title,
                (SELECT a.name FROM books_authors_link bal JOIN authors a ON bal.author = a.id WHERE bal.book = b.id LIMIT 1) AS author,
                (SELECT a.sort FROM books_authors_link bal JOIN authors a ON bal.author = a.id WHERE bal.book = b.id LIMIT 1) AS author_sort,
                b.path, b.timestamp, b.series_index,
                (SELECT s.name FROM books_series_link bsl JOIN series s ON s.id = bsl.series WHERE bsl.book = b.id LIMIT 1) AS series,
                (SELECT group_concat(tg.name, ', ') FROM books_tags_link btl JOIN tags tg ON tg.id = btl.tag WHERE btl.book = b.id) AS tags
                FROM books b JOIN books_series_link bsl ON b.id = bsl.book
-               WHERE bsl.series = ?1 ORDER BY b.series_index";
-    author_books_query(db, source, sql, series_id)
+               WHERE bsl.series = ?1 ORDER BY {order}"
+    );
+    author_books_query(db, source, &sql, series_id)
 }
 
 fn author_books_query(
@@ -964,7 +982,8 @@ pub fn search_books(
     let sql = format!(
         "SELECT DISTINCT b.id, b.title, a.name, b.path, s.name, b.series_index,
                 (SELECT GROUP_CONCAT(t2.name, ', ') FROM books_tags_link btl2 JOIN tags t2 ON t2.id = btl2.tag WHERE btl2.book = b.id) AS tags,
-                a.sort AS author_sort
+                a.sort AS author_sort,
+                b.timestamp
          FROM books b
          JOIN books_authors_link bal ON bal.book = b.id
          JOIN authors a ON a.id = bal.author
@@ -1000,6 +1019,7 @@ pub fn search_books(
                 },
                 cover_hash: String::new(),
                 author_sort: col_string_or(row, 7, ""),
+                timestamp: col_string_or(row, 8, ""),
             })
         })
         .map_err(|e| CatalogDbError::Corrupt(e.to_string()))?;

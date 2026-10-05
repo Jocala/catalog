@@ -29,7 +29,12 @@ below except where a live procedure depends on them.
   covers, rich list rows (`ListDelegate`). Update check at startup
   (`updatecheck.cpp` vs `version.h`, `catalog/version.txt` on jocala.com;
   opt-out `CheckForUpdates` in Settings; manual check in About;
-  changelog at `catalog/changelog.txt`). Assets mirrored in-tree
+  changelog at `catalog/changelog.txt`). Drilled series grid sorts
+  Index (Calibre `series_index`) / A–Z / Z–A: `isSeriesDrill()` swaps the
+  box labels (`ByAuthor` slot reads Index there), drill-in defaults to
+  Index, engine `books_by_series` takes `(sort_descending, by_index)`
+  with FFI `sort_by_author` carrying Index on the `series_books:` branch
+  (same ABI). Assets mirrored in-tree
   (`assets/`: `help.html`, `donatel.png`, `appicon.ico`,
   `AppIcon.icns` — canonical). Per-platform build scripts beside it
   (`build-catalog-{windows.ps1,macos.sh,linux.sh}` for build +
@@ -167,6 +172,14 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
+- m1 test refresh 2026-10-04 (NOT staged/released, version string still
+  1.06): drilled-series Index sort build, signed/notarized/stapled DMG
+  (`catalog-1.06-Darwin.dmg` rebuilt), installed on m1
+  `/Applications/JocalaCatalog.app` from the mounted DMG + verified
+  (Notarized Developer ID, binary md5 `b34378e2270b8ff6b4904ae4cfd6d1ff`).
+  Deploy note: `stapler staple` on the bare .app fails (ticket is tied to
+  the submitted DMG) — install from the mounted DMG so Gatekeeper sees
+  Notarized; ad-hoc dev copies lose LAN/TCC grants.
 - Catalog 1.06 LIVE 2026-09-28: EXE 16258994 + DMG 42773183
   signed/notarized/stapled + TGZ 14005743; chunked resumable Kobo sync
   (1MB verified chunks, retry resumes instead of restarting), sync

@@ -58,6 +58,20 @@ private slots:
         QCOMPARE(m.data(m.index(0), BookModel::TagsRole).toString(),
                  QString("Fiction, Romance"));
     }
+    void timestampRole() {
+        BookModel m;
+        BookItem b;
+        b.id = 1;
+        b.title = "Emma";
+        b.timestamp = "2013-11-04 22:23:16";
+        m.setBooks({b});
+        QCOMPARE(m.data(m.index(0), BookModel::TimestampRole).toString(),
+                 QString("2013-11-04 22:23:16"));
+        QCOMPARE(m.bookAt(0).timestamp, QString("2013-11-04 22:23:16"));
+        // Tiles (author/series/tag) carry no date — the row line is skipped.
+        m.setTiles({"Fiction"}, {"1 books"}, {1}, {}, true);
+        QVERIFY(m.data(m.index(0), BookModel::TimestampRole).toString().isEmpty());
+    }
     void tagTileRole() {
         BookModel m;
         m.setTiles({"Fiction"}, {"1 books"}, {1}, {}, true);

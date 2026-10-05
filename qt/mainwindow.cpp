@@ -27,9 +27,11 @@
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScreen>
+#include <QSizePolicy>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -78,8 +80,10 @@ void TileDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
     QFont f = p->font();
     f.setPointSize(9);
     p->setFont(f);
-    p->drawText(titleRect, Qt::AlignHCenter | Qt::TextWordWrap,
-                idx.data(BookModel::TitleRole).toString());
+    QString shown = displayTitle(idx.data(BookModel::TitleRole).toString(),
+                                 idx.data(BookModel::SeriesRole).toString(),
+                                 idx.data(BookModel::SeriesIndexRole).toDouble());
+    p->drawText(titleRect, Qt::AlignHCenter | Qt::TextWordWrap, shown);
     QRect subRect(opt.rect.x(), opt.rect.y() + 282, 200, 16);
     p->setPen(Qt::gray);
     f.setPointSize(8);
@@ -107,6 +111,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     });
     newWin->setShortcut(QKeySequence::New);
     file->addAction("&Settings…", this, &MainWindow::onSettings);
+    file->addAction("&Reload", this, &MainWindow::onReload);
     file->addAction("&Open Data Folder", this, &MainWindow::onOpenDataFolder);
     file->addSeparator();
     file->addAction("E&xit", qApp, &QApplication::quit);
@@ -118,37 +123,55 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
     QToolBar *bar = addToolBar("Main");
     bar->setMovable(false);
-    QAction *searchAct = bar->addAction("🔍", this, &MainWindow::onSearch);
-    searchAct->setToolTip("Search Books");
-    bar->addAction("Reload", this, &MainWindow::onReload);
-    bar->addAction("Settings", this, &MainWindow::onSettings);
-    bar->addSeparator();
+    // Gap after the arrow is fixed-width so it does not eat the toolbar
+    // slack; the gap before the glyph group expands to pin it right.
+    auto addSpacer = [bar](int fixedWidth) {
+        QWidget *s = new QWidget(bar);
+        s->setSizePolicy(fixedWidth > 0 ? QSizePolicy::Fixed : QSizePolicy::Expanding,
+                         QSizePolicy::Preferred);
+        if (fixedWidth > 0)
+            s->setFixedWidth(fixedWidth);
+        bar->addWidget(s);
+    };
+    // Back arrow: resets the display to the library root. Always visible,
+    // so its position never shifts; at the root it simply re-reads.
+    m_backAct = bar->addAction("←", this, &MainWindow::onLibraryBack);
+    m_backAct->setToolTip("Back to Library");
+    addSpacer(12);
     m_browseBox = new QComboBox(this);
     m_browseBox->addItems({"Books", "Author", "Series", "Tags"});
     m_browseBox->setToolTip("Browse: Books, Author, Series, or Tags");
     connect(m_browseBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onBrowseChanged);
     bar->addWidget(m_browseBox);
+    addSpacer(12);
     m_sortBox = new QComboBox(this);
     m_sortBox->setToolTip("Sort order");
     connect(m_sortBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onSortChanged);
     bar->addWidget(m_sortBox);
     bar->addSeparator();
-    m_gridBtn = new QPushButton("Grid", this);
-    m_gridBtn->setCheckable(true);
-    m_gridBtn->setChecked(true);
-    m_listBtn = new QPushButton("List", this);
-    m_listBtn->setCheckable(true);
-    connect(m_gridBtn, &QPushButton::clicked, this, [this]() { onViewMode(true); });
-    connect(m_listBtn, &QPushButton::clicked, this, [this]() { onViewMode(false); });
-    bar->addWidget(m_gridBtn);
-    bar->addWidget(m_listBtn);
-    m_libraryBtn = new QPushButton("Library", this);
-    m_libraryBtn->setVisible(false);
-    m_libraryBtn->setStyleSheet("font-weight: bold");
-    connect(m_libraryBtn, &QPushButton::clicked, this, &MainWindow::onLibraryBack);
-    bar->addWidget(m_libraryBtn);
+    addSpacer(0);
+    // Search and the view toggles, right-aligned as one group.
+    QAction *searchAct = bar->addAction("🔍", this, &MainWindow::onSearch);
+    searchAct->setToolTip("Search Books");
+    m_gridAct = bar->addAction("⊞", this, [this]() { onViewMode(true); });
+    m_gridAct->setCheckable(true);
+    m_gridAct->setChecked(true);
+    m_gridAct->setToolTip("Grid view");
+    m_listAct = bar->addAction("☰", this, [this]() { onViewMode(false); });
+    m_listAct->setCheckable(true);
+    m_listAct->setToolTip("List view");
+    // These are bare glyphs, so bump their point size to read at a
+    // glance beside the toolbar's text actions. QToolButton paints with its
+    // own font (QAction::setFont would not reach it), so set it on the
+    // button the toolbar built for each action.
+    QFont glyphFont = bar->font();
+    glyphFont.setPointSize(glyphFont.pointSize() + 3);
+    for (QAction *act : {m_backAct, searchAct, m_gridAct, m_listAct}) {
+        if (QToolButton *btn = qobject_cast<QToolButton *>(bar->widgetForAction(act)))
+            btn->setFont(glyphFont);
+    }
 
     m_stack = new QStackedWidget(this);
     m_grid = new QListView(this);
@@ -240,12 +263,34 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         m_updater.check(this, true); // startup: silent unless an update is ready
 }
 
+// Sort enum -> combo label. Kept by name, never by position: the combo
+// order is a UI choice (Books leads with Newest/Oldest) and must not
+// depend on the enum's declaration order.
+static QString sortLabel(CatalogStore::Sort s) {
+    switch (s) {
+    case CatalogStore::Newest: return QStringLiteral("Newest");
+    case CatalogStore::Oldest: return QStringLiteral("Oldest");
+    case CatalogStore::AZ: return QStringLiteral("A–Z");
+    case CatalogStore::ZA: return QStringLiteral("Z–A");
+    case CatalogStore::ByAuthor: break;
+    }
+    return QStringLiteral("Author");
+}
+
 void MainWindow::refreshSortBox() {
     m_sortBox->blockSignals(true);
     m_sortBox->clear();
+    // Drilled series grid: Index (= series_index) replaces Author.
+    if (m_store.isSeriesDrill()) {
+        m_sortBox->addItems({"Index", "A–Z", "Z–A"});
+        CatalogStore::Sort s = m_store.sort();
+        m_sortBox->setCurrentIndex(s == CatalogStore::ZA ? 2 : s == CatalogStore::AZ ? 1 : 0);
+        m_sortBox->blockSignals(false);
+        return;
+    }
     switch (m_store.mode()) {
     case CatalogStore::Books:
-        m_sortBox->addItems({"Author", "A–Z", "Z–A", "Newest", "Oldest"});
+        m_sortBox->addItems({"Newest", "Oldest", "Author", "A–Z", "Z–A"});
         break;
     case CatalogStore::Authors:
         m_sortBox->addItems({"A–Z", "Z–A"});
@@ -257,7 +302,10 @@ void MainWindow::refreshSortBox() {
         m_sortBox->addItems({"A–Z", "Z–A"});
         break;
     }
-    m_sortBox->setCurrentIndex(0);
+    // Reflect the sort actually in effect. A blind row 0 would now claim
+    // "Newest" whenever the store is still on Author.
+    const int cur = m_sortBox->findText(sortLabel(m_store.sort()));
+    m_sortBox->setCurrentIndex(cur >= 0 ? cur : 0);
     m_sortBox->blockSignals(false);
 }
 
@@ -274,11 +322,9 @@ void MainWindow::restoreToolbar() {
     refreshSortBox();
     QString want = "A–Z";
     if (mode == CatalogStore::Books) {
-        static const char *k[] = {"Author", "A–Z", "Z–A", "Newest", "Oldest"};
-        want = k[(int)sort];
+        want = sortLabel(sort);
     } else if (mode == CatalogStore::Series) {
-        static const char *k[] = {"Author", "A–Z", "Z–A"};
-        want = k[(int)sort <= 2 ? (int)sort : 0];
+        want = sort == CatalogStore::ZA ? "Z–A" : sort == CatalogStore::AZ ? "A–Z" : "Author";
     } else if (sort == CatalogStore::ZA) {
         want = "Z–A";
     }
@@ -329,7 +375,7 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
 }
 
 QString MainWindow::currentView() const {
-    return m_gridBtn->isChecked() ? "grid" : "list";
+    return m_gridAct->isChecked() ? "grid" : "list";
 }
 
 void MainWindow::onBrowseChanged(int i) {
@@ -348,7 +394,7 @@ void MainWindow::onSortChanged(int i) {
     else if (t == "Z–A") s = CatalogStore::ZA;
     else if (t == "Newest") s = CatalogStore::Newest;
     else if (t == "Oldest") s = CatalogStore::Oldest;
-    else s = CatalogStore::ByAuthor;
+    else s = CatalogStore::ByAuthor; // "Author" and drilled "Index" share the slot
     Q_UNUSED(m);
     m_store.setSort(s);
     m_store.saveView(currentView());
@@ -359,13 +405,12 @@ void MainWindow::onSearch() {
     if (dlg.exec() != QDialog::Accepted)
         return;
     m_store.runSearch(dlg.params());
-    m_libraryBtn->setVisible(true);
 }
 
 void MainWindow::onReload() {
-    m_libraryBtn->setVisible(false);
     m_koboActive = false;
     m_store.reload(true);
+    refreshSortBox();
 }
 
 void MainWindow::onSettings() {
@@ -380,17 +425,16 @@ void MainWindow::onSettings() {
 }
 
 void MainWindow::onViewMode(bool grid) {
-    m_gridBtn->setChecked(grid);
-    m_listBtn->setChecked(!grid);
+    m_gridAct->setChecked(grid);
+    m_listAct->setChecked(!grid);
     m_stack->setCurrentWidget(grid ? (QWidget *)m_grid : (QWidget *)m_list);
     m_store.saveView(currentView());
 }
 
 void MainWindow::onLibraryBack() {
-    m_libraryBtn->setVisible(false);
-    m_libraryBtn->setText("Library");
     m_koboActive = false;
     m_store.reload();
+    refreshSortBox();
 }
 
 void MainWindow::onTileActivated(const QModelIndex &idx) {
@@ -400,8 +444,6 @@ void MainWindow::onTileActivated(const QModelIndex &idx) {
     qint64 id = m_store.model()->idAt(idx.row());
     QString title = m_store.model()->data(idx, BookModel::TitleRole).toString();
     if (!m_store.showingBooks()) {
-        m_libraryBtn->setText("‹ Back");
-        m_libraryBtn->setVisible(true);
         if (m_store.searchSeriesMode()) {
             m_store.drillSeries(id, title);
         } else if (m == CatalogStore::Authors) {
@@ -411,6 +453,7 @@ void MainWindow::onTileActivated(const QModelIndex &idx) {
         } else if (m == CatalogStore::Tags) {
             m_store.drillTag(title);
         }
+        refreshSortBox();
         return;
     }
     openDetail(idx.row());
@@ -491,7 +534,7 @@ void MainWindow::onLoading(bool loading) {
     }
     if (m_store.model()->rowCount() == 0) {
         m_stack->setCurrentWidget(m_emptyPage);
-    } else if (m_gridBtn->isChecked()) {
+    } else if (m_gridAct->isChecked()) {
         m_stack->setCurrentWidget(m_grid);
     } else {
         m_stack->setCurrentWidget(m_list);

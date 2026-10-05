@@ -48,6 +48,36 @@ fn golden_fetch_books_paths() {
 }
 
 #[test]
+fn golden_fetch_books_carries_timestamp() {
+    // The list row shows "date added", so the gallery query must select
+    // books.timestamp (it previously only ordered by it).
+    let db = fixture_db();
+    let source = fixture_source();
+    let books = fetch_books(&db, &source, "", false, true, false).unwrap();
+    let emma = books.iter().find(|b| b.title == "Emma").unwrap();
+    assert_eq!(emma.timestamp, "2024-01-01");
+    let hound = books.iter().find(|b| b.title.contains("Hound")).unwrap();
+    assert_eq!(hound.timestamp, "2023-06-01");
+    // Every fixture row has a date, so none should come back empty.
+    assert!(books.iter().all(|b| !b.timestamp.is_empty()));
+}
+
+#[test]
+fn golden_search_carries_timestamp() {
+    let db = fixture_db();
+    let source = fixture_source();
+    let p = SearchParams {
+        query: "author:doyle".to_string(),
+        ..Default::default()
+    };
+    let found = search_books(&db, &source, &p).unwrap();
+    assert_eq!(found.len(), 2);
+    assert!(found.iter().all(|b| !b.timestamp.is_empty()));
+    let hound = found.iter().find(|b| b.title.contains("Hound")).unwrap();
+    assert_eq!(hound.timestamp, "2023-06-01");
+}
+
+#[test]
 fn golden_search_field_syntax() {
     let db = fixture_db();
     let source = fixture_source();
@@ -75,7 +105,7 @@ fn golden_tags_series_authors() {
     let series = all_series(&db, &source, false, false).unwrap();
     assert_eq!(series.len(), 2);
     let holmes = series.iter().find(|s| s.name == "Holmes").unwrap();
-    assert_eq!(books_by_series(&db, &source, holmes.id).unwrap().len(), 2);
+    assert_eq!(books_by_series(&db, &source, holmes.id, false, true).unwrap().len(), 2);
     let authors = all_authors(&db, &source, false).unwrap();
     assert_eq!(authors.len(), 2);
     let austen = authors.iter().find(|a| a.name == "Jane Austen").unwrap();

@@ -140,7 +140,8 @@ AppSettings AppSettings::load() {
     s.koboHandoffPromptDone = o.value("KoboHandoffPromptDone").toBool(false);
     s.theme = o.value("ThemePreference").toInt(0);
     s.browseMode = qBound(0, o.value("BrowseMode").toInt(0), 3);
-    s.sortOrder = qBound(0, o.value("SortOrder").toInt(0), 4);
+    // Fallback 3 = Newest, the default order; must track AppSettings.
+    s.sortOrder = qBound(0, o.value("SortOrder").toInt(3), 4);
     s.viewMode = o.value("ViewMode").toString("grid");
     if (s.viewMode != "grid" && s.viewMode != "list")
         s.viewMode = "grid";

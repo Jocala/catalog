@@ -67,7 +67,7 @@ private:
     UpdateChecker m_updater;
     QComboBox *m_browseBox;
     QComboBox *m_sortBox;
-    QPushButton *m_libraryBtn;
+    QAction *m_backAct;
     QListView *m_grid;
     QListView *m_list;
     QStackedWidget *m_stack;
@@ -75,8 +75,8 @@ private:
     QWidget *m_loadingPage;
     QLabel *m_emptyTitle;
     QLabel *m_statusLabel;
-    QPushButton *m_gridBtn;
-    QPushButton *m_listBtn;
+    QAction *m_gridAct;
+    QAction *m_listAct;
     BookItem m_pendingBook;
     int m_pendingRow = -1;
     DetailItem m_pendingDetail;

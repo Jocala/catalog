@@ -33,7 +33,7 @@ Kobo e-reader. The Windows, macOS, and Linux versions work the same way.</p>
 
 <h2>1. Getting started</h2>
 <ol>
-  <li>Open <b>Settings</b> (toolbar button).</li>
+  <li>Open <b>Settings</b> (<b>File → Settings…</b>).</li>
   <li>Pick a library source: <b>SMB</b> (a Calibre library on another computer
       or NAS) or <b>Local</b> (a Calibre folder on this computer).</li>
   <li>Fill in the details (see §7), press the <b>Test</b> buttons until you see
@@ -86,14 +86,18 @@ the app remembers the rest in Settings.</p>
   <li><b>Browse picker</b> — switch the gallery root between
       <b>Books</b>, <b>Author</b>, <b>Series</b>, and <b>Tags</b>.</li>
   <li><b>Sort picker</b> — the choices depend on the view: Books offers
-      Author, A–Z, Z–A, Newest, Oldest; Author offers A–Z, Z–A; Series offers
+      Newest, Oldest, Author, A–Z, Z–A (new installs start on
+      <b>Newest</b>); Author offers A–Z, Z–A; Series offers
       Author, A–Z, Z–A; Tags offers A–Z, Z–A.</li>
-  <li><b>Grid / List</b> — toggle cover tiles or a compact list.</li>
+  <li><b>⊞ / ☰</b> — toggle cover tiles or a compact list. List rows show the
+      <i>date added</i> for each book (e.g. <i>Added 2024-01-01</i>).</li>
   <li><b>Drill in</b> — double-click (or press <kbd>Enter</kbd> on) an author,
-      series, or tag tile to see its books; the <b>‹ Back</b> toolbar button
-      returns to the gallery.</li>
-  <li><b>Reload</b> — re-reads the library, picking up books you added in
-      Calibre.</li>
+      series, or tag tile to see its books. Drilling into a series switches the
+      sort picker to <b>Index</b>, A–Z, Z–A. The <b>←</b> toolbar button is
+      always at the far left; it returns a drilled or searched view to the
+      gallery, and simply re-reads the library when you are already there.</li>
+  <li><b>File → Reload</b> — re-reads the library, picking up books you added
+      in Calibre.</li>
   <li>The status bar at the bottom shows the book/author/series/tag count, or status messages
       while the Kobo is working.</li>
   <li><b>Right-click a tile</b> for
@@ -103,23 +107,29 @@ the app remembers the rest in Settings.</p>
 <h2>4. Searching</h2>
 <ul>
   <li>Press the <b>🔍 Search</b> button to open the search form.</li>
-  <li><b>All-fields box</b> — matches across title, author, series, and tags.
-      It understands prefixes: <code>author:asimov</code>,
-      <code>tag:espionage</code>.</li>
+  <li><b>General box</b> — matches across title, author, series, tags,
+      publisher, and comments. It understands prefixes:
+      <code>author:asimov</code>, <code>title:foundation</code>,
+      <code>series:discworld</code>, <code>tag:espionage</code>,
+      <code>publisher:delrey</code>, <code>comments:award</code>. Plain text
+      with no prefix searches all of those at once.</li>
   <li><b>Title / Author</b> — match those fields only.</li>
   <li><b>Series / Tag lists</b> — pick from every series and tag in your
-      library, with book counts.</li>
+      library, or type your own.</li>
   <li><b>“Expand tag to series”</b> — when only a tag is
       given, show the matching <i>series</i> instead of a flat book list.</li>
   <li>Press <b>Search</b> (or <kbd>Enter</kbd>); <b>Cancel</b> (or
       <kbd>Esc</kbd>) closes the form. Search needs at least one filled field.</li>
-  <li>Results replace the library view; press the <b>Library</b> button to go
-      back. Click a result to open its details.</li>
+  <li>Results replace the library view; press the <b>←</b> button to go
+      back to the library. Click a result to open its details. A
+      tag-expanded search lists the matching <i>series</i> — drill into one
+      to see its books.</li>
 </ul>
 
 <h2>5. Book details</h2>
-<p>Double-click a book (or press <kbd>Enter</kbd>) to open its details: cover, title,
-author, series + number, tags, publisher, ISBN, and description.</p>
+<p>Double-click a book (or press <kbd>Enter</kbd>) to open its details: cover, title
+(a series book shows its number with the title, e.g. <i>Emma #1</i>),
+author, series, tags, publisher, ISBN, and description.</p>
 <ul>
   <li><b>Read on Kobo</b> — opens the book on your Kobo (see §6).</li>
   <li><b>Close</b> (or <kbd>Esc</kbd>) returns to the library.</li>
@@ -189,8 +199,10 @@ author, series + number, tags, publisher, ISBN, and description.</p>
   <li><b>File → New Window</b> — open another library window
       (<kbd>Cmd+N</kbd> Mac,
       <kbd>Ctrl+N</kbd> Windows/Linux).</li>
+  <li><b>File → Settings…</b> — also the <b>Open Settings</b> button on the
+      empty library page.</li>
+  <li><b>File → Reload</b> — re-reads the library (§3).</li>
   <li><b>File → Open Data Folder</b> — §9.</li>
-  <li><b>File → Settings…</b> — or the toolbar <b>Settings</b> button.</li>
   <li><b>File → Exit</b> quits the app.</li>
   <li><b>Help → Jocala Catalog Help</b> — this page.</li>
   <li><b>About Jocala Catalog</b> — version, links, donations, and a

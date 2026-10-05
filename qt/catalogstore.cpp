@@ -91,6 +91,8 @@ void CatalogStore::drillSeries(qint64 id, const QString &title) {
     m_drillKind = "series";
     m_drillId = id;
     m_drillTitle = title;
+    // Entering a series selects Index order (ByAuthor slot = Index here).
+    m_sort = ByAuthor;
     exitSearch();
     ++m_coverGen;
     startLoad("drill");

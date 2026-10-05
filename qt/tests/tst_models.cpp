@@ -29,5 +29,14 @@ void TstModels::detail() {
     QCOMPARE(d.isbn, QString("978"));
 }
 
+void TstModels::seriesInTitle() {
+    // Series books carry their number with the title; others are bare.
+    QCOMPARE(displayTitle("Emma", "Classics", 1.0), QString("Emma #1"));
+    QCOMPARE(displayTitle("Hound", "Holmes", 1.5), QString("Hound #1.5"));
+    QCOMPARE(displayTitle("Emma", "", 0.0), QString("Emma"));
+    QCOMPARE(displayTitle("Emma", "", 1.0), QString("Emma"));
+    QCOMPARE(displayTitle("Emma", "Classics", 0.0), QString("Emma"));
+}
+
 QTEST_MAIN(TstModels)
 #include "tst_models.moc"

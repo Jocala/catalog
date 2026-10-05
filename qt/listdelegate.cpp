@@ -1,6 +1,7 @@
 #include "listdelegate.h"
 #include "bookmodel.h"
 #include "tagicon.h"
+#include <QDate>
 #include <QPainter>
 
 ListDelegate::ListDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
@@ -40,6 +41,7 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
     QString tags = idx.data(BookModel::TagsRole).toString();
     QString series = idx.data(BookModel::SeriesRole).toString();
     double seriesIndex = idx.data(BookModel::SeriesIndexRole).toDouble();
+    title = displayTitle(title, series, seriesIndex);
 
     QFont titleFont = p->font();
     titleFont.setWeight(QFont::DemiBold);
@@ -64,10 +66,21 @@ void ListDelegate::paint(QPainter *p, const QStyleOptionViewItem &opt,
                     Qt::AlignLeft | Qt::AlignVCenter, tagsElided);
     }
     if (!series.isEmpty()) {
-        QString line = QString("%1 #%2").arg(series).arg(seriesIndex);
-        QString lineElided = sfm.elidedText(line, Qt::ElideRight, textW);
+        // The #N rides with the title now — this line names the series.
+        QString lineElided = sfm.elidedText(series, Qt::ElideRight, textW);
         p->drawText(textX, opt.rect.y() + 140, textW, 18,
                     Qt::AlignLeft | Qt::AlignVCenter, lineElided);
+    }
+    // Date added to the library, on its own bottom line so it keeps the
+    // same position whether or not the tag/series lines above it drew.
+    // Calibre stores 'YYYY-MM-DD HH:MM:SS'; show the date part only.
+    const QDate added = QDate::fromString(
+        idx.data(BookModel::TimestampRole).toString().left(10), Qt::ISODate);
+    if (added.isValid()) {
+        QString addedElided =
+            sfm.elidedText("Added " + added.toString(Qt::ISODate), Qt::ElideRight, textW);
+        p->drawText(textX, opt.rect.y() + 158, textW, 18,
+                    Qt::AlignLeft | Qt::AlignVCenter, addedElided);
     }
     p->restore();
 }

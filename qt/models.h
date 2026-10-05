@@ -59,3 +59,9 @@ QList<BookItem> parseBooks(const QJsonValue &v);
 QList<AuthorItem> parseAuthors(const QJsonValue &v);
 QList<SeriesItem> parseSeries(const QJsonValue &v);
 QList<TagItem> parseTags(const QJsonValue &v);
+
+// Display: books in a series show "Title #N" wherever a title is
+// painted (grid tile, list row, detail header). Raw model fields stay
+// untouched — views compose via this helper.
+QString formatSeriesIndex(double v);
+QString displayTitle(const QString &title, const QString &series, double seriesIndex);

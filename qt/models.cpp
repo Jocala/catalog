@@ -1,5 +1,6 @@
 #include "models.h"
 #include <QJsonArray>
+#include <cmath>
 
 static QString str(const QJsonObject &o, const char *k) {
     return o.value(QLatin1String(k)).toString();
@@ -96,4 +97,19 @@ QList<TagItem> parseTags(const QJsonValue &v) {
     for (const QJsonValue &e : v.toArray())
         out.append(TagItem::fromJson(e.toObject()));
     return out;
+}
+
+QString formatSeriesIndex(double v) {
+    // Integral indices render without decimals (#1, not #1.0);
+    // fractional ones keep their precision (#1.5).
+    double intpart = 0;
+    if (std::modf(v, &intpart) == 0.0)
+        return QString::number((qlonglong)intpart);
+    return QString::number(v, 'g', 6);
+}
+
+QString displayTitle(const QString &title, const QString &series, double seriesIndex) {
+    if (series.trimmed().isEmpty() || !(seriesIndex > 0))
+        return title;
+    return QString("%1 #%2").arg(title).arg(formatSeriesIndex(seriesIndex));
 }

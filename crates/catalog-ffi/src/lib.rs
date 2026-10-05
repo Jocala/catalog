@@ -615,8 +615,11 @@ pub extern "C" fn catalog_browse(
         }
         if let Some(id) = mode.strip_prefix("series_books:") {
             let id: i64 = id.parse().map_err(|_| "bad series id".to_string())?;
+            // Drilled series: sort_by_author carries Index here (Qt maps
+            // Index→ByAuthor, A–Z→AZ, Z–A→ZA); the flag is unused otherwise.
             let books =
-                db::books_by_series(&conn, &src, id).map_err(|e| e.to_string())?;
+                db::books_by_series(&conn, &src, id, sort_descending, sort_by_author)
+                    .map_err(|e| e.to_string())?;
             return serde_json::to_value(&books).map_err(|e| e.to_string());
         }
         if let Some(name) = mode.strip_prefix("tag_series:") {

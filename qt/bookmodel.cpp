@@ -16,6 +16,7 @@ void BookModel::setBooks(const QList<BookItem> &books) {
         r.series = b.series;
         r.seriesIndex = b.seriesIndex;
         r.tags = b.tags;
+        r.timestamp = b.timestamp;
         r.tagTile = false;
         m_rows.append(r);
     }
@@ -74,6 +75,7 @@ BookItem BookModel::bookAt(int row) const {
     b.series = m_rows[row].series;
     b.seriesIndex = m_rows[row].seriesIndex;
     b.tags = m_rows[row].tags;
+    b.timestamp = m_rows[row].timestamp;
     return b;
 }
 
@@ -106,6 +108,8 @@ QVariant BookModel::data(const QModelIndex &index, int role) const {
         return r.seriesIndex;
     case TagsRole:
         return r.tags;
+    case TimestampRole:
+        return r.timestamp;
     case TagTileRole:
         return r.tagTile;
     case CoverRole: {

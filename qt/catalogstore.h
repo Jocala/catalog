@@ -27,6 +27,8 @@ public:
     Mode mode() const { return m_mode; }
     Sort sort() const { return m_sort; }
     bool showingBooks() const;
+    // Drilled into a series tile: book grid sorts by Index / A–Z / Z–A.
+    bool isSeriesDrill() const { return m_drillKind == "series"; }
     // Search tag→series expand shows series tiles, not books.
     bool searchSeriesMode() const { return m_searching && m_searchSeriesMode; }
     // Startup restore: set toolbar state without starting a load
@@ -138,7 +140,7 @@ private:
     BookModel m_model;
     ErrorLog m_log;
     Mode m_mode = Books;
-    Sort m_sort = ByAuthor;
+    Sort m_sort = Newest; // default order: newest first (matches AppSettings)
     bool m_loading = false;
     bool m_freshNext = false;
     bool m_searching = false;

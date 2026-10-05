@@ -33,7 +33,8 @@ struct AppSettings {
     bool koboHandoffPromptDone = false; // stacking-fix offer, asked once
     int theme = 0;           // 0 system, 1 light, 2 dark
     int browseMode = 0;      // toolbar browse: 0 Books, 1 Author, 2 Series, 3 Tags
-    int sortOrder = 0;       // toolbar sort: CatalogStore::Sort enum value (0-4)
+    int sortOrder = 3;       // toolbar sort: CatalogStore::Sort enum value (0-4),
+                             // default 3 = Newest
     QString viewMode = "grid"; // toolbar view: "grid" | "list"
     bool checkForUpdates = true; // startup update check (opt-out in Settings)
     bool diagLogging = false;    // diagnostic load timings in errors.log ([diag])

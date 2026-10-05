@@ -87,6 +87,9 @@ pub struct SearchedBook {
     pub tags: Vec<String>,
     pub cover_hash: String,
     pub author_sort: String,
+    /// Calibre "date added" as stored ('YYYY-MM-DD HH:MM:SS').
+    #[serde(default)]
+    pub timestamp: String,
 }
 
 // CatalogBook lives in ReaderCatalogApp.swift (GUI row, has_cover flag).
@@ -104,6 +107,9 @@ pub struct CatalogBook {
     pub series_index: f32,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Calibre "date added" as stored ('YYYY-MM-DD HH:MM:SS').
+    #[serde(default)]
+    pub timestamp: String,
 }
 
 // SearchResult lives in SearchFormSheet.swift.
