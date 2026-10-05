@@ -53,6 +53,34 @@ below except where a live procedure depends on them.
   Windows and Linux build/test on an ad hoc basis. Flag anything
   that may not port or needs platform-specific attention instead of
   verifying all three targets on every change.
+- Toolbar layout (2026-10-05, glyph-only): `← ── [Browse] ── [Sort] │ ── 🔍 ⊞ ☰`.
+  Glyph buttons are real `QAction`s on the `QToolBar` (`addAction`), never
+  `QPushButton` in `addWidget` — that is what makes them match 🔍. The +3pt
+  glyph size must be set on the `QToolButton` from `widgetForAction()`:
+  `QToolButton` paints with its own font, so `QAction::setFont` is silently
+  ignored. Only the gap before the glyph group expands; the gaps after the
+  arrow and between the combos are fixed 12px (two expanding spacers split
+  the slack and leave the controls stranded mid-bar). Reload and Settings
+  live in the File menu only, not the toolbar.
+- Sort enum ↔ combo label mapping goes through `sortLabel()` **by name**.
+  Never index a positional array by the `Sort` enum, and never restore the
+  selection with a blind `setCurrentIndex(0)` — both silently break the
+  moment the combo order differs from the enum's declaration order (this
+  bit twice on the Newest-first reorder). `refreshSortBox()` resolves the
+  current index from `m_store.sort()`.
+- Default sort is Newest (`AppSettings::sortOrder = 3`,
+  `CatalogStore::m_sort = Newest`). The `load()` fallback for a missing
+  `SortOrder` key must stay `3` too — an explicit `.toInt(0)` there
+  overrides the struct default and silently reinstates Author on every
+  fresh start. `setMode()` still resets to `ByAuthor` on browse-mode
+  change on purpose: Newest is not offered in Author/Tags/Series modes.
+- List-mode rows show the date added (`Added YYYY-MM-DD`) on its own
+  fixed bottom slot (y+158, RowHeight 196), so it keeps the same position
+  whether or not the tag/series lines above it drew. The engine must
+  actually SELECT `b.timestamp` — `fetch_books` once ordered by it without
+  selecting it, so the root gallery had no date at all while the drilled
+  paths did. Append new columns to those queries rather than inserting
+  them, to keep the column indices in the row mappers honest.
 - Cover pipeline rules (proven twice, do not regress): demand-gated
   fetches only (never queues/backlogs), 6 concurrent max, disk cache
   capped (256 MB), worker decode, coalesced repaints, silent fresh
@@ -172,6 +200,20 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
+- m1 test deploy 2026-10-05 (NOT staged/released; jocala.com still serves
+  1.06, so the in-app updater will not prompt): first 1.07 build. DMG
+  `catalog-1.07-Darwin.dmg` 41334473 bytes, notarization submission
+  `c370f61f-5199-425e-a26a-6b064d370c15` Accepted, stapled + validated.
+  Installed on m1 `/Applications/JocalaCatalog.app` from the mounted DMG,
+  replacing the 1.06 test build + verified: version 1.07, `spctl` accepted
+  `source=Notarized Developer ID`, Team `9Q77WK7W3R`, hardened runtime
+  `flags=0x10000(runtime)`, **Notarization Ticket=stapled on the app
+  itself** (so it passes without the DMG present), binary md5
+  `31dfb198ce2b1edde2ea5af3eae7221a`, universal x86_64+arm64. Commit
+  `3d8f79f` (local only, not pushed). Shipped entitlements are
+  `com.apple.security.cs.disable-library-validation` only — no
+  `network.client`; see the global AGENTS.md signing section for why that
+  is correct (sandbox-only key, apps are unsandboxed).
 - m1 test refresh 2026-10-04 (NOT staged/released, version string still
   1.06): drilled-series Index sort build, signed/notarized/stapled DMG
   (`catalog-1.06-Darwin.dmg` rebuilt), installed on m1
