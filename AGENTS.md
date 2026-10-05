@@ -86,6 +86,20 @@ below except where a live procedure depends on them.
   capped (256 MB), worker decode, coalesced repaints, silent fresh
   start, byte-capped (not count-capped) memory.
 - Passwords from Settings at runtime; never baked into builds; never logged.
+- Signing: `qt/packaging/catalog.entitlements` is now an **empty `<dict/>`**
+  (was `com.apple.security.cs.disable-library-validation`), shipping with
+  1.08. The exemption was unnecessary: re-signed with Developer ID +
+  `--options runtime` and no entitlements, the app launches and runs;
+  `otool -arch <slice> -L` shows 32 dylibs per slice with 0 outside
+  `/usr/lib` + `/System`; the custom universal static OpenSSL is linked into
+  the executable (146 symbols, 0 dynamic refs) so the app's own signature
+  covers it. The exact `package-catalog-macos.sh` codesign line was re-run
+  against the empty plist: hardened runtime intact, empty `[Dict]`,
+  `codesign -v` clean, app launches. adblink and aquarium still carry the
+  same dead exemption in their own repos — fix them the same way when their
+  next releases come round. Add it back only if a real third-party `.dylib`
+  is ever dlopen'd at runtime (a Qt plugin built as a dylib would do it).
+  Re-check recipe: copy the app, re-sign without `--entitlements`, launch.
 - Mac deploy cleanup (policy 2026-09-25): after a successful verified
   install on a Mac host (m1/t2 `/Applications/JocalaCatalog.app` —
   version + `spctl` + `codesign` + md5 all green), delete the staging
@@ -245,6 +259,8 @@ update-enabled installs at once — no staged rollout.
   entitlements are `com.apple.security.cs.disable-library-validation`
   only — no `network.client`; see the global AGENTS.md signing section
   for why that is correct (sandbox-only key, apps are unsandboxed).
+  The `disable-library-validation` exemption was **unnecessary** — removed
+  from the tree, ships with 1.08 (see Conventions).
 - m1 test refresh 2026-10-04 (NOT staged/released, version string still
   1.06): drilled-series Index sort build, signed/notarized/stapled DMG
   (`catalog-1.06-Darwin.dmg` rebuilt), installed on m1
