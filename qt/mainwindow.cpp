@@ -168,10 +168,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     // button the toolbar built for each action.
     QFont glyphFont = bar->font();
     glyphFont.setPointSize(glyphFont.pointSize() + 3);
-    for (QAction *act : {m_backAct, searchAct, m_gridAct, m_listAct}) {
+    QFont gridFont = bar->font();
+    gridFont.setPointSize(glyphFont.pointSize() * 2);
+    for (QAction *act : {m_backAct, searchAct, m_listAct}) {
         if (QToolButton *btn = qobject_cast<QToolButton *>(bar->widgetForAction(act)))
             btn->setFont(glyphFont);
     }
+    if (QToolButton *gridBtn = qobject_cast<QToolButton *>(bar->widgetForAction(m_gridAct)))
+        gridBtn->setFont(gridFont);
 
     m_stack = new QStackedWidget(this);
     m_grid = new QListView(this);
