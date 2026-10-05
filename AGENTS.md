@@ -119,6 +119,22 @@ below except where a live procedure depends on them.
 - The shell is `cmd` (`dir/copy/rmdir/findstr`, `&&` chains) unless
   you wrap `powershell -NoProfile -Command "..."` (then `;`
   separators — PowerShell 5.1 rejects `&&`).
+- `read-session-output` returns null on BOTH win10 and debian
+  (confirmed again 2026-10-05) — a background session will happily run
+  the whole build with no output ever surfacing. Do not read that as
+  failure: confirm via artifacts (fresh binary mtime, ctest
+  `Testing/Temporary/LastTest.log`, package timestamp) and via
+  `tasklist`/`pgrep` for phase. On debian the session's command can also
+  never start at all (build dir absent, no cargo process) — when that
+  happens, `close-session` and relaunch detached:
+  `setsid nohup bash <script> > /tmp/build.log 2>&1 < /dev/null &`,
+  then poll the log with `tail`.
+- `Start-Process` on win10 does NOT survive the SSH channel closing —
+  the child is killed and both the stdout and stderr redirect files land
+  0 bytes with no error. Use `open-session type=background` instead.
+- PowerShell via MCP: pass `-ArgumentList` as ONE string, not an array —
+  nested quoting through cmd → powershell → Start-Process flattens an
+  array into `System.Object[]` and fails to bind.
 - ISCC lives at `C:\bin\inno\ISCC.exe` (not `C:\bin\bin\`).
 - Never relink over a running exe (`LNK1104`) — quit the app first.
 
@@ -200,20 +216,35 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
-- m1 test deploy 2026-10-05 (NOT staged/released; jocala.com still serves
-  1.06, so the in-app updater will not prompt): first 1.07 build. DMG
-  `catalog-1.07-Darwin.dmg` 41334473 bytes, notarization submission
-  `c370f61f-5199-425e-a26a-6b064d370c15` Accepted, stapled + validated.
-  Installed on m1 `/Applications/JocalaCatalog.app` from the mounted DMG,
-  replacing the 1.06 test build + verified: version 1.07, `spctl` accepted
+- Catalog 1.07 LIVE 2026-10-05: EXE 16281662 + DMG 41334473
+  signed/notarized/stapled + TGZ 14015233. Glyph-only toolbar
+  (`← ── [Browse] ── [Sort] │ ── 🔍 ⊞ ☰`, Reload/Settings moved to the
+  File menu), always-visible back arrow, list rows show the Calibre
+  date-added, Newest-first default sort + Books order
+  Newest/Oldest/Author/A–Z/Z–A, drilled-series Index sort, help audit
+  (real "General" label, full `field:` prefix list, correct menu order).
+  Verified before release: win10 `ctest` 6/6 (LastTest.log), debian
+  `ctest` 6/6 offscreen, macOS `ctest` 6/6, `cargo test --workspace`
+  45+10+4+7, `cargo clippy --workspace --all-targets -- -D warnings`
+  clean. macOS notarization submission
+  `c370f61f-5199-425e-a26a-6b064d370c15` Accepted; m1 install binary md5
+  `31dfb198ce2b1edde2ea5af3eae7221a`. Staging commits `5c0395a` +
+  `01291d8`; GitHub release `v1.07` (tag at `ef5d822`) carries all three
+  installers. Gotcha worth keeping: `scp` from win10 carried the .exe
+  over as mode 0700, so Apache served it 403 — `chmod 644` any Windows
+  artifact after upload and re-commit the mode.
+- m1 test deploy 2026-10-05 (pre-release; jocala.com still served 1.06
+  at the time, so no install was prompted). Installed on m1
+  `/Applications/JocalaCatalog.app` from the mounted DMG, replacing the
+  1.06 test build, then manually tested on all three platforms before the
+  release. Verified: version 1.07, `spctl` accepted
   `source=Notarized Developer ID`, Team `9Q77WK7W3R`, hardened runtime
-  `flags=0x10000(runtime)`, **Notarization Ticket=stapled on the app
-  itself** (so it passes without the DMG present), binary md5
-  `31dfb198ce2b1edde2ea5af3eae7221a`, universal x86_64+arm64. Commit
-  `3d8f79f` (local only, not pushed). Shipped entitlements are
-  `com.apple.security.cs.disable-library-validation` only — no
-  `network.client`; see the global AGENTS.md signing section for why that
-  is correct (sandbox-only key, apps are unsandboxed).
+  `flags=0x10000(runtime)`, and **Notarization Ticket=stapled on the app
+  itself** (so it passes Gatekeeper without the DMG present), binary md5
+  `31dfb198ce2b1edde2ea5af3eae7221a`, universal x86_64+arm64. Shipped
+  entitlements are `com.apple.security.cs.disable-library-validation`
+  only — no `network.client`; see the global AGENTS.md signing section
+  for why that is correct (sandbox-only key, apps are unsandboxed).
 - m1 test refresh 2026-10-04 (NOT staged/released, version string still
   1.06): drilled-series Index sort build, signed/notarized/stapled DMG
   (`catalog-1.06-Darwin.dmg` rebuilt), installed on m1
