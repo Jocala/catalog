@@ -230,6 +230,13 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
+- Catalog 1.07 REFRESH 2026-10-05 (no version change): live EXE now
+  16289612 (was 16281662) carrying the doubled toolbar grid (⊞) glyph;
+  DMG/TGZ unchanged. `version.txt`/`changelog.txt`/`index.html`
+  untouched, so the in-app updater does not prompt. Staging commit
+  `48f0639`; GitHub `v1.07` EXE asset replaced (md5 `b2f786b1…` all
+  three copies: win10 `~/install`, staging, prod, GitHub). Source commit
+  `d0a947c`.
 - Catalog 1.07 LIVE 2026-10-05: EXE 16281662 + DMG 41334473
   signed/notarized/stapled + TGZ 14015233. Glyph-only toolbar
   (`← ── [Browse] ── [Sort] │ ── 🔍 ⊞ ☰`, Reload/Settings moved to the
