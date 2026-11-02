@@ -20,7 +20,8 @@ $CPACK --config "$BUILD_DIR/CPackConfig.cmake" \
   -B "$BUILD_DIR/packages"
 
 NOTARY_PROFILE="notary-jeff"
-DMG="$BUILD_DIR/packages/catalog-1.07-Darwin.dmg"
+VERSION=$(grep 'kCatalogVersion' "${SCRIPT_DIR}/version.h" | sed 's/.*"\(.*\)".*/\1/')
+DMG="$BUILD_DIR/packages/catalog-${VERSION}-Darwin.dmg"
 xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
