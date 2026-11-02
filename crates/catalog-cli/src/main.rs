@@ -103,6 +103,16 @@ enum LibraryOp {
         #[command(flatten)]
         creds: Creds,
     },
+    /// Is the local metadata copy behind the source? Prints
+    /// `stale=0|1 current=<size>:<mtime> recorded=<size>:<mtime>`.
+    /// `--refresh` fetches and rewrites the copy first (what File → Reload does).
+    Stale {
+        path: String,
+        #[arg(long)]
+        refresh: bool,
+        #[command(flatten)]
+        creds: Creds,
+    },
 }
 
 #[derive(Subcommand)]
@@ -179,6 +189,29 @@ async fn cmd_library_open(path: &str, creds: &Creds, settings: &Settings) -> Res
     let db = open_db(&source).await?;
     let n = fetch_count(&db, "").map_err(|e| e.to_string())?;
     println!("{}: {n} books", source.display_path());
+    Ok(())
+}
+
+async fn cmd_library_stale(
+    path: &str,
+    refresh: bool,
+    creds: &Creds,
+    settings: &Settings,
+) -> Result<(), String> {
+    let source = source_from(path, creds, settings)?;
+    if refresh {
+        let progress = std::sync::Mutex::new(catalog_core::smb::SmbFetchDiag::default());
+        let out = source.read_db_bytes_cached(true, &progress).await;
+        let bytes = out.result.map_err(|e| e.to_string())?;
+        println!("refreshed {} bytes", bytes.len());
+    }
+    let check = source.metadata_copy_stale().await.map_err(|e| e.to_string())?;
+    println!(
+        "stale={} current={} recorded={}",
+        if check.stale { 1 } else { 0 },
+        if check.current.is_empty() { "-" } else { &check.current },
+        if check.recorded.is_empty() { "-" } else { &check.recorded }
+    );
     Ok(())
 }
 
@@ -527,6 +560,9 @@ async fn run() -> Result<(), String> {
             }
             LibraryOp::Detail { path, id, creds } => {
                 cmd_library_detail(&path, id, &creds, &settings).await
+            }
+            LibraryOp::Stale { path, refresh, creds } => {
+                cmd_library_stale(&path, refresh, &creds, &settings).await
             }
         },
         Cmd::ImportZip { file, to } => cmd_import_zip(&file, &to),

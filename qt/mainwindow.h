@@ -52,6 +52,9 @@ private slots:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    // Focus return is the natural moment to notice Calibre changed the
+    // library; the probe is throttled inside the store.
+    bool event(QEvent *e) override;
     void moveEvent(QMoveEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 

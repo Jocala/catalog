@@ -96,8 +96,13 @@ the app remembers the rest in Settings.</p>
       sort picker to <b>Index</b>, A–Z, Z–A. The <b>←</b> toolbar button is
       always at the far left; it returns a drilled or searched view to the
       gallery, and simply re-reads the library when you are already there.</li>
+  <li><b>↻</b> — reload the library, picking up books you added in Calibre.
+      Same as <b>File → Reload</b>.</li>
   <li><b>File → Reload</b> — re-reads the library, picking up books you added
       in Calibre.</li>
+  <li>Coming back to the window also re-checks the library against the server
+      and refreshes by itself if Calibre changed anything, so a book added
+      while Catalog was out of focus usually needs no click at all.</li>
   <li>The status bar at the bottom shows the book/author/series/tag count, or status messages
       while the Kobo is working.</li>
   <li><b>Right-click a tile</b> for
@@ -201,7 +206,8 @@ author, series, tags, publisher, ISBN, and description.</p>
       <kbd>Ctrl+N</kbd> Windows/Linux).</li>
   <li><b>File → Settings…</b> — also the <b>Open Settings</b> button on the
       empty library page.</li>
-  <li><b>File → Reload</b> — re-reads the library (§3).</li>
+  <li><b>File → Reload</b> — re-reads the library (§3), also the <b>↻</b>
+      toolbar button.</li>
   <li><b>File → Open Data Folder</b> — §9.</li>
   <li><b>File → Exit</b> quits the app.</li>
   <li><b>Help → Jocala Catalog Help</b> — this page.</li>
@@ -248,7 +254,9 @@ author, series, tags, publisher, ISBN, and description.</p>
   <li><b>Slow first loads</b> — the first load after setup or Reload reads
       the whole library over the network; later loads reuse a local copy
       (<code>smb-metadata.db</code> next to the covers cache) and are much
-      faster. Reload always fetches fresh.</li>
+      faster. Reload always fetches fresh, and the copy records the
+      server's <code>metadata.db</code> size and timestamp, so returning to
+      the window re-fetches only when the file actually changed.</li>
   <li><b>Reporting a library problem</b> — turn on <b>Settings → General →
       Diagnostic logging</b>, reproduce the slow load or error once, then
       open <b>File → Open Data Folder</b> and attach <code>errors.log</code>.

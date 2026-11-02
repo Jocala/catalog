@@ -53,6 +53,11 @@ signals:
 
 public slots:
     void reload(bool fresh = false);
+    // Re-run the current view (root / drill / search) without losing place.
+    void reloadView(bool fresh);
+    // Cheap metadata.db identity probe; a stale answer refreshes the copy
+    // in place. Throttled, skipped while loading, silent on failure.
+    void probeMetadataStale();
     void setMode(Mode m);
     void setSort(Sort s);
     void drillAuthor(qint64 id, const QString &title);
@@ -72,6 +77,7 @@ signals:
 
 private slots:
     void onLoaded();
+    void onStaleProbed();
     void onLoadTimeout(int gen, const QString &kind);
     void onHandoffChecked();
     void onHandoffEnsured();
@@ -195,6 +201,13 @@ private:
     bool m_koboSyncActive = false;
     QString m_koboSyncTitle;
     QFutureWatcher<LoadResult> m_watcher;
+    // Staleness probe (window activation): one directory listing against the
+    // source, never a fetch. Throttled so alt-tabbing cannot turn into an
+    // SMB request per focus change; a stale answer refreshes the copy.
+    QFutureWatcher<QJsonObject> m_staleWatcher;
+    QElapsedTimer m_staleClock;
+    bool m_staleBusy = false;
+    static const int STALE_INTERVAL_MS = 30000;
     // Load watchdog: startLoad latches m_loading until onLoaded. If the
     // worker never returns (some FFI stages have no deadline), the window
     // would sit on Loading… forever and every later reload() would no-op.

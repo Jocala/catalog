@@ -153,6 +153,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     bar->addSeparator();
     addSpacer(0);
     // Search and the view toggles, right-aligned as one group.
+    QAction *reloadAct = bar->addAction("↻", this, &MainWindow::onReload);
+    reloadAct->setToolTip("Reload library (File → Reload)");
     QAction *searchAct = bar->addAction("🔍", this, &MainWindow::onSearch);
     searchAct->setToolTip("Search Books");
     m_gridAct = bar->addAction("⊞", this, [this]() { onViewMode(true); });
@@ -170,7 +172,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     glyphFont.setPointSize(glyphFont.pointSize() + 3);
     QFont gridFont = bar->font();
     gridFont.setPointSize(glyphFont.pointSize() * 2);
-    for (QAction *act : {m_backAct, searchAct, m_listAct}) {
+    for (QAction *act : {m_backAct, reloadAct, searchAct, m_listAct}) {
         if (QToolButton *btn = qobject_cast<QToolButton *>(bar->widgetForAction(act)))
             btn->setFont(glyphFont);
     }
@@ -366,6 +368,12 @@ void MainWindow::saveGeometrySetting() {
 void MainWindow::closeEvent(QCloseEvent *event) {
     saveGeometrySetting();
     QMainWindow::closeEvent(event);
+}
+
+bool MainWindow::event(QEvent *e) {
+    if (e->type() == QEvent::WindowActivate)
+        m_store.probeMetadataStale();
+    return QMainWindow::event(e);
 }
 
 void MainWindow::moveEvent(QMoveEvent *event) {

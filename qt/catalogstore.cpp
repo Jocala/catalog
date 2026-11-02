@@ -34,6 +34,8 @@ CatalogStore::CatalogStore(QObject *parent)
     m_settings = AppSettings::load();
     m_log.logHeader(kCatalogVersion, m_settings);
     connect(&m_watcher, &QFutureWatcher<LoadResult>::finished, this, &CatalogStore::onLoaded);
+    connect(&m_staleWatcher, &QFutureWatcher<QJsonObject>::finished, this,
+            &CatalogStore::onStaleProbed);
     connect(&m_model, &BookModel::coverNeeded, this, &CatalogStore::onCoverNeeded);
     m_koboPoll.setInterval(500);
     connect(&m_koboPoll, &QTimer::timeout, this, &CatalogStore::onKoboPoll);
@@ -61,6 +63,55 @@ void CatalogStore::reload(bool fresh) {
     m_freshNext = fresh;
     ++m_coverGen;
     startLoad("root");
+}
+
+void CatalogStore::reloadView(bool fresh) {
+    // Keeps the current view: a background refresh must not throw away the
+    // drill or search the user is looking at.
+    m_freshNext = fresh;
+    ++m_coverGen;
+    if (m_searching)
+        startLoad("search");
+    else if (!m_drillKind.isEmpty())
+        startLoad("drill");
+    else
+        startLoad("root");
+}
+
+void CatalogStore::probeMetadataStale() {
+    if (m_staleBusy || m_loading || !m_settings.hasSource())
+        return;
+    if (m_staleClock.isValid() && m_staleClock.elapsed() < STALE_INTERVAL_MS)
+        return;
+    m_staleClock.start();
+    m_staleBusy = true;
+    const QByteArray cfg =
+        m_settings.libraryConfigJson(false, false).toUtf8();
+    QFuture<QJsonObject> f = QtConcurrent::run([cfg]() {
+        QJsonObject out;
+        char *raw = catalog_metadata_stale(cfg.constData());
+        if (raw) {
+            out = QJsonDocument::fromJson(QByteArray(raw)).object();
+            catalog_string_free(raw);
+        }
+        return out;
+    });
+    m_staleWatcher.setFuture(f);
+}
+
+void CatalogStore::onStaleProbed() {
+    m_staleBusy = false;
+    const QJsonObject ok = m_staleWatcher.result().value("ok").toObject();
+    if (ok.isEmpty())
+        return; // probe failed: silent, the copy stays as it was
+    if (ok.value("stale").toInt(0) == 0)
+        return;
+    trace(QString("metadata copy stale recorded=%1 current=%2")
+              .arg(ok.value("recorded").toString(), ok.value("stamp").toString()));
+    m_log.log("library", QString("metadata copy stale (was %1, now %2), refreshing")
+                             .arg(ok.value("recorded").toString(),
+                                  ok.value("stamp").toString()));
+    reloadView(true);
 }
 
 void CatalogStore::setMode(Mode m) {

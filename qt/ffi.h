@@ -18,6 +18,9 @@ void catalog_string_free(char *s);
 void catalog_bytes_free(CatalogBytes b);
 
 char *catalog_open_count(const char *config_json);
+// Cheap identity probe of the source's metadata.db (one directory listing,
+// no data read): {"ok":{"stale":0|1,"stamp":"<size>:<mtime>","recorded":…}}.
+char *catalog_metadata_stale(const char *config_json);
 char *catalog_fetch_books(const char *config_json, const char *query,
                           bool sort_descending, bool sort_by_author, bool sort_by_date);
 char *catalog_browse(const char *config_json, const char *mode,

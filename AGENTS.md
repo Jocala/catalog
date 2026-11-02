@@ -44,7 +44,7 @@ below except where a live procedure depends on them.
   `packaging/catalog.iss.in` (single-exe Inno installer).
 - `crates/catalog-core/` — GUI-free Rust business logic (the only thing UI crates may depend on); `tests/fixtures/` holds the 4-book `metadata.db` + `make-fixture.sql`
 - `crates/catalog-ffi/` — C ABI over core (staticlib for the Qt shells, JSON in/out, blocking fns, tokio inside); 6 smoke tests vs fixture
-- `crates/catalog-cli/` — acceptance harness: `library open|list|detail`, `import-zip` (zip-slip safe), `smb ls|get`, `cover`, `kobo`, `settings` probes (CLI prints `(set)`/`(empty)`, never values)
+- `crates/catalog-cli/` — acceptance harness: `library open|list|detail|stale`, `import-zip` (zip-slip safe), `smb ls|get`, `cover`, `kobo`, `settings` probes (CLI prints `(set)`/`(empty)`, never values)
 - Build trees live outside the repo (win10/debian `~/build-catalog`, Mac `source/builds/catalog`) + cargo `target/` (regenerable).
 
 ## Conventions
@@ -53,15 +53,17 @@ below except where a live procedure depends on them.
   Windows and Linux build/test on an ad hoc basis. Flag anything
   that may not port or needs platform-specific attention instead of
   verifying all three targets on every change.
-- Toolbar layout (2026-10-05, glyph-only): `← ── [Browse] ── [Sort] │ ── 🔍 ⊞ ☰`.
+- Toolbar layout (2026-11-02): `← ── [Browse] ── [Sort] │ ── ↻ 🔍 ⊞ ☰`.
   Glyph buttons are real `QAction`s on the `QToolBar` (`addAction`), never
   `QPushButton` in `addWidget` — that is what makes them match 🔍. The +3pt
   glyph size must be set on the `QToolButton` from `widgetForAction()`:
   `QToolButton` paints with its own font, so `QAction::setFont` is silently
   ignored. Only the gap before the glyph group expands; the gaps after the
   arrow and between the combos are fixed 12px (two expanding spacers split
-  the slack and leave the controls stranded mid-bar). Reload and Settings
-  live in the File menu only, not the toolbar.
+  the slack and leave the controls stranded mid-bar). Settings lives in the
+  File menu only; Reload is in the File menu **and** the ↻ glyph (it was
+  File-only for 1.07, and users could not find it — the library looked stale
+  until they opened Settings, whose OK also triggers a fresh reload).
 - Sort enum ↔ combo label mapping goes through `sortLabel()` **by name**.
   Never index a positional array by the `Sort` enum, and never restore the
   selection with a blind `setCurrentIndex(0)` — both silently break the
@@ -85,6 +87,18 @@ below except where a live procedure depends on them.
   fetches only (never queues/backlogs), 6 concurrent max, disk cache
   capped (256 MB), worker decode, coalesced repaints, silent fresh
   start, byte-capped (not count-capped) memory.
+- Library staleness (2026-11-02): the copy (`smb-metadata.db`) is served on
+  existence alone, so ordinary loads never touch the network. Beside it,
+  `smb-metadata.stamp` records the server's `metadata.db` size + mtime as
+  written at each fresh fetch (`CatalogDb::read_db_bytes_cached`, core).
+  `MainWindow::event(WindowActivate)` calls `CatalogStore::probeMetadataStale()`,
+  which runs `catalog_metadata_stale` off the UI thread (one directory
+  listing, no data read), throttled to 30s and skipped while loading. A
+  changed stamp triggers `reloadView(true)`, which re-runs the current
+  root/drill/search view instead of resetting to root. Probe failures are
+  silent by design. Local sources read direct and are never stale. Verify
+  headlessly: `cargo run -p catalog-cli -- library stale smb://host/share/dir
+  --user U --password P [--refresh]` prints `stale=0|1 current=… recorded=…`.
 - Passwords from Settings at runtime; never baked into builds; never logged.
 - Signing: `qt/packaging/catalog.entitlements` is now an **empty `<dict/>`**
   (was `com.apple.security.cs.disable-library-validation`), shipping with
@@ -230,6 +244,15 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
+- **UNRELEASED (in tree, no version bump) — 2026-11-02, pending 1.08:**
+  ↻ reload glyph on the toolbar + automatic staleness check on window
+  activation (`smb-metadata.stamp`, `catalog_metadata_stale`, `reloadView`).
+  macOS build + `ctest` 6/6 green; `cargo test --workspace` and
+  `cargo clippy --workspace --all-targets -- -D warnings` clean. Live SMB
+  verification against the real library (debian `.39`, 6755 books): no
+  stamp → `stale=1`, `--refresh` writes 44,199,936 bytes + stamp and then
+  reports `stale=0 current=44199936:1793637254`, an edited stamp reads
+  `stale=1`, refresh restores `stale=0`. Windows/Linux not yet built.
 - Catalog 1.07 REFRESH 2026-10-05 (no version change): live EXE now
   16289612 (was 16281662) carrying the doubled toolbar grid (⊞) glyph;
   DMG/TGZ unchanged. `version.txt`/`changelog.txt`/`index.html`

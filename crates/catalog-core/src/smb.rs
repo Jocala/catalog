@@ -13,11 +13,20 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 use thiserror::Error;
 
+/// FILETIME (100 ns ticks since 1601-01-01) -> unix seconds.
+fn file_time_secs(raw: u64) -> i64 {
+    const TICKS_PER_SEC: u64 = 10_000_000;
+    const EPOCH_DELTA_SECS: i64 = 11_644_473_600;
+    (raw / TICKS_PER_SEC) as i64 - EPOCH_DELTA_SECS
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmbEntry {
     pub name: String,
     pub is_directory: bool,
     pub size: u64,
+    /// Last write time in unix seconds (0 when the server reports none).
+    pub modified_secs: i64,
 }
 
 #[derive(Debug, Error)]
@@ -473,6 +482,7 @@ impl SmbBackend for SmbCrateBackend {
                 name: info.file_name.to_string(),
                 is_directory: info.file_attributes.directory(),
                 size: info.end_of_file,
+                modified_secs: file_time_secs(*info.last_write_time),
             });
         }
         Ok(out)

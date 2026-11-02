@@ -42,6 +42,58 @@ pub fn strip_calibre_html(html: &str) -> String {
 /// Plain data — UI crates never see protocol types.
 pub type DirEntry = crate::smb::SmbEntry;
 
+/// Identity of the live `metadata.db` a copy was taken from: size plus
+/// mtime. Calibre rewrites the file on any library change, so a change in
+/// either field means the copy no longer matches the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DbStamp {
+    pub size: u64,
+    pub mtime: i64,
+}
+
+impl DbStamp {
+    pub fn parse(s: &str) -> Option<Self> {
+        let (size, mtime) = s.trim().split_once(':')?;
+        Some(Self {
+            size: size.parse().ok()?,
+            mtime: mtime.parse().ok()?,
+        })
+    }
+}
+
+impl std::fmt::Display for DbStamp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.size, self.mtime)
+    }
+}
+
+/// `recorded` is the stamp written beside the copy (None when absent or
+/// unreadable). A missing stamp counts as stale: the copy predates stamping,
+/// and one Reload replaces it.
+pub fn stamp_is_stale(recorded: Option<&str>, current: &DbStamp) -> bool {
+    match recorded.and_then(DbStamp::parse) {
+        Some(r) => r != *current,
+        None => true,
+    }
+}
+
+fn mtime_secs(md: &std::fs::Metadata) -> Option<i64> {
+    md.modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs() as i64)
+}
+
+/// Outcome of comparing the source's `metadata.db` with the recorded copy
+/// stamp. `current`/`recorded` are printable for diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CopyCheck {
+    pub stale: bool,
+    pub current: String,
+    pub recorded: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct SmbLocation {
     pub host: String,
@@ -134,6 +186,61 @@ impl FileSource {
 
     pub fn is_local(&self) -> bool {
         matches!(self, Self::Local { .. })
+    }
+
+    /// Remote (or local) `metadata.db` identity — size + mtime. One directory
+    /// listing for SMB, no data read, so it is cheap enough to run on every
+    /// window activation.
+    pub async fn metadata_stamp(&self) -> Result<DbStamp, CatalogDbError> {
+        match self {
+            Self::Local { dir } => {
+                let path = dir.join("metadata.db");
+                let md = std::fs::metadata(&path).map_err(|e| CatalogDbError::NotFound {
+                    smb_path: format!("file://{}", path.display()),
+                    detail: e.to_string(),
+                })?;
+                Ok(DbStamp {
+                    size: md.len(),
+                    mtime: mtime_secs(&md).unwrap_or(0),
+                })
+            }
+            Self::Smb { .. } => {
+                let entries = self.list_dir("").await?;
+                let entry = entries
+                    .iter()
+                    .find(|e| e.name.eq_ignore_ascii_case("metadata.db"))
+                    .ok_or_else(|| CatalogDbError::NotFound {
+                        smb_path: "metadata.db".into(),
+                        detail: "metadata.db not listed in the library folder".into(),
+                    })?;
+                Ok(DbStamp {
+                    size: entry.size,
+                    mtime: entry.modified_secs,
+                })
+            }
+        }
+    }
+
+    /// Compare the copy's recorded stamp with the source. Local sources read
+    /// direct and never copy, so they are never stale.
+    pub async fn metadata_copy_stale(&self) -> Result<CopyCheck, CatalogDbError> {
+        if self.is_local() {
+            return Ok(CopyCheck {
+                stale: false,
+                current: String::new(),
+                recorded: String::new(),
+            });
+        }
+        let current = self.metadata_stamp().await?;
+        let recorded = std::fs::read_to_string(Self::metadata_stamp_path(false))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        Ok(CopyCheck {
+            stale: stamp_is_stale(recorded.as_deref(), &current),
+            current: current.to_string(),
+            recorded: recorded.unwrap_or_default(),
+        })
     }
 
     fn local_verified(mut dir: String) -> Result<Self, CatalogDbError> {
@@ -314,6 +421,30 @@ impl FileSource {
         crate::settings::base_dir().join(name)
     }
 
+    /// Identity of the source recorded when the copy was written. Absent or
+    /// unparsable = the copy cannot be trusted against the live file.
+    pub fn metadata_stamp_path(is_local: bool) -> PathBuf {
+        let name = if is_local {
+            "local-metadata.stamp"
+        } else {
+            "smb-metadata.stamp"
+        };
+        crate::settings::base_dir().join(name)
+    }
+
+    /// Best-effort stamp write (temp + rename), mirroring `store_copy`.
+    pub fn store_stamp(path: &std::path::Path, stamp: &DbStamp) {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
+        if std::fs::write(&tmp, format!("{stamp}\n")).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        } else {
+            let _ = std::fs::remove_file(&tmp);
+        }
+    }
+
     /// Read a copy file at an explicit path (unit-testable core of the
     /// serve step): `Some((bytes, age_secs))` when present and non-empty,
     /// else `None`. Age is informational only — validity is existence.
@@ -396,6 +527,9 @@ impl FileSource {
         match res {
             Ok(b) => {
                 Self::store_copy(&path, &b);
+                if let Ok(stamp) = self.metadata_stamp().await {
+                    Self::store_stamp(&Self::metadata_stamp_path(false), &stamp);
+                }
                 FetchOutcome {
                     result: Ok(b),
                     copy: CopyState {
@@ -447,7 +581,8 @@ impl FileSource {
                     out.push(DirEntry {
                         name: entry.file_name().to_string_lossy().to_string(),
                         is_directory: ft.map(|t| t.is_dir()).unwrap_or(false),
-                        size: md.map(|m| m.len()).unwrap_or(0),
+                        size: md.as_ref().map(|m| m.len()).unwrap_or(0),
+                        modified_secs: md.as_ref().and_then(mtime_secs).unwrap_or(0),
                     });
                 }
                 out.sort_by_key(|a| a.name.to_lowercase());
@@ -1175,5 +1310,75 @@ mod tests {
         assert!(FileSource::metadata_copy_path(false)
             .to_string_lossy()
             .contains("smb-metadata.db"));
+    }
+
+    #[test]
+    fn stamp_roundtrips_through_its_file_form() {
+        let stamp = DbStamp { size: 6_755_000, mtime: 1_763_000_000 };
+        assert_eq!(stamp.to_string(), "6755000:1763000000");
+        assert_eq!(DbStamp::parse("6755000:1763000000\n"), Some(stamp));
+        assert_eq!(DbStamp::parse(""), None);
+        assert_eq!(DbStamp::parse("6755000"), None);
+        assert_eq!(DbStamp::parse("abc:def"), None);
+    }
+
+    #[test]
+    fn stamp_stale_only_when_identity_changes() {
+        let current = DbStamp { size: 100, mtime: 200 };
+        // Same size and mtime: the copy still matches the source.
+        assert!(!stamp_is_stale(Some("100:200"), &current));
+        // Either field moving means Calibre rewrote the database.
+        assert!(stamp_is_stale(Some("100:201"), &current));
+        assert!(stamp_is_stale(Some("101:200"), &current));
+        // No stamp recorded (first run after upgrade) reads as stale.
+        assert!(stamp_is_stale(None, &current));
+        assert!(stamp_is_stale(Some("   "), &current));
+    }
+
+    #[test]
+    fn stamp_store_is_atomic_and_parseable() {
+        let dir = std::env::temp_dir().join(format!(
+            "catalog-stamp-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0)
+        ));
+        let path = dir.join("smb-metadata.stamp");
+        let stamp = DbStamp { size: 42, mtime: 99 };
+        FileSource::store_stamp(&path, &stamp);
+        let back = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(DbStamp::parse(&back), Some(stamp));
+        // No temp debris left behind.
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn local_source_is_never_stale() {
+        // Local sources read direct, so there is no copy to fall behind.
+        let dir = std::env::temp_dir().join(format!(
+            "catalog-local-stale-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("metadata.db"), b"not-a-real-db").unwrap();
+        let src = FileSource::Local { dir: dir.clone() };
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime");
+        let check = rt.block_on(src.metadata_copy_stale()).unwrap();
+        assert!(!check.stale);
+        assert!(check.current.is_empty());
+        let stamp = rt.block_on(src.metadata_stamp()).unwrap();
+        assert_eq!(stamp.size, b"not-a-real-db".len() as u64);
+        assert!(stamp.mtime > 0);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

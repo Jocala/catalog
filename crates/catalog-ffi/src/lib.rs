@@ -517,6 +517,28 @@ pub extern "C" fn catalog_version() -> *mut c_char {
 // rule as core: live metadata.db straight into :memory:, no local copy)
 // ---------------------------------------------------------------------------
 
+/// `{"ok":{"stale":0|1,"stamp":"<size>:<mtime>","recorded":"<size>:<mtime>"}}`
+/// Cheap identity probe for the source's `metadata.db`: one directory listing,
+/// never a data read. Shells call it on window activation to decide whether
+/// the local copy is behind the live file.
+#[no_mangle]
+pub extern "C" fn catalog_metadata_stale(config_json: *const c_char) -> *mut c_char {
+    run(|| {
+        let raw = c_str(config_json)?;
+        let cfg: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
+        let src = file_source(&cfg)?;
+        let check = runtime()
+            .block_on(src.metadata_copy_stale())
+            .map_err(|e| e.to_string())?;
+        Ok(serde_json::json!({
+            "stale": if check.stale { 1 } else { 0 },
+            "stamp": check.current,
+            "recorded": check.recorded,
+        }))
+    })
+}
+
 /// `{"ok":{"books":N}}` — validates a library (parity gate entry point).
 #[no_mangle]
 pub extern "C" fn catalog_open_count(config_json: *const c_char) -> *mut c_char {
