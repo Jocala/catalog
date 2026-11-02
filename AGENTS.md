@@ -244,15 +244,22 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
-- **UNRELEASED (in tree, no version bump) — 2026-11-02, pending 1.08:**
-  ↻ reload glyph on the toolbar + automatic staleness check on window
-  activation (`smb-metadata.stamp`, `catalog_metadata_stale`, `reloadView`).
-  macOS build + `ctest` 6/6 green; `cargo test --workspace` and
-  `cargo clippy --workspace --all-targets -- -D warnings` clean. Live SMB
-  verification against the real library (debian `.39`, 6755 books): no
-  stamp → `stale=1`, `--refresh` writes 44,199,936 bytes + stamp and then
-  reports `stale=0 current=44199936:1793637254`, an edited stamp reads
-  `stale=1`, refresh restores `stale=0`. Windows/Linux not yet built.
+- **Catalog 1.08 LIVE 2026-11-02**: EXE 16343425 (`4c3caa4d…`), DMG 41633287
+  (`07801da1…`, signed/notarized/stapled, `CFBundleShortVersionString` 1.08),
+  TGZ 14047134 (`24982be7…`). Reload ↻ glyph on the toolbar + automatic
+  library staleness check on window activation (see Conventions). Code commit
+  `238b048`, packaging fix `57042cb` (tag `v1.08` there), site commit
+  `dc7e679`; GitHub release `v1.08` carries all three installers. Tests: mac
+  6/6, debian 6/6 offscreen, win10 6/6; `cargo test --workspace` +
+  `cargo clippy --workspace --all-targets -- -D warnings` clean. Live check:
+  `version.txt` = 1.08, changelog v1.08 head, all three URLs 200 with byte
+  counts and sha256 matching the staged copies. **`version.txt` flip prompts
+  every update-enabled install at once** — done deliberately on request.
+- **Packaging gotcha (bit 1.08):** `qt/package-catalog-macos.sh` had the DMG
+  name hardcoded (`catalog-1.07-Darwin.dmg`), so it notarized the *previous*
+  release's image and left the new one `Unnotarized Developer ID` — caught by
+  mounting the new DMG before staging. Now derives from `version.h`. adblink
+  had the identical bug; check any new product script for a literal version.
 - Catalog 1.07 REFRESH 2026-10-05 (no version change): live EXE now
   16289612 (was 16281662) carrying the doubled toolbar grid (⊞) glyph;
   DMG/TGZ unchanged. `version.txt`/`changelog.txt`/`index.html`
