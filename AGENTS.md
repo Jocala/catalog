@@ -99,7 +99,19 @@ below except where a live procedure depends on them.
   stamp logic is covered by unit tests in `db.rs`
   (`stamp_stale_only_when_identity_changes`, `local_source_is_never_stale`);
   a live-share check is a GUI spot check (open a window, watch it reload).
-- Passwords from Settings at runtime; never baked into builds; never logged.
+- Read on Kobo matching (2026-11-19, do not regress): identity is
+  **title + author**, never a substring sweep. `kobo::parse_candidate`
+  recovers each device file's title/author from
+  `<AuthorDir>/<Title> - <Author>.kepub.epub`; `kobo::classify` tiers hits
+  Exact / Fuzzy / TitleOnly. Files matching neither are dropped — they are
+  not "duplicates" and must never reach a dialog. `.kepub.epub` beats its
+  `.epub` twin silently; two kepubs with the same identity are a real tie
+  and go to the shell. Subtitle tolerance applies only when exactly one side
+  has a subtitle, so parallel volumes ("Star Wars: Heir" / "Star Wars:
+  Hand") never collapse. `catalog_kobo_resolve` identifies without opening;
+  `catalog_kobo_open_path` launches the chosen path. A single `TitleOnly`
+  hit is offered (sync stays primary), never auto-opened.
+- **Passwords from Settings at runtime; never baked into builds; never logged.
 - Signing: `qt/packaging/catalog.entitlements` is now an **empty `<dict/>`**
   (was `com.apple.security.cs.disable-library-validation`), shipping with
   1.08. The exemption was unnecessary: re-signed with Developer ID +
@@ -244,6 +256,27 @@ update-enabled installs at once — no staged rollout.
 - Passwords live in device Settings only — never in this repo.
 
 ## Currently live (jocala.com) + staged
+- **Catalog 1.09 LIVE 2026-11-19**: EXE 16371720 (`43922c5f…`), DMG 43150262
+  (`1a68ab45…`, signed/notarized/stapled, `CFBundleShortVersionString` 1.09),
+  TGZ 14065527 (`1cdfff35…`). Read on Kobo now matches identity (title +
+  author; see Conventions), `crates/catalog-cli` deleted, `version.h` /
+  `project(VERSION)` / `catalog.iss.in` = 1.09. Code commit `5b2b6c0` (tag
+  `v1.09` there), site commit `711034a`; GitHub release `v1.09` carries all
+  three installers. Tests: mac 6/6, debian 6/6 offscreen, win10 6/6,
+  `cargo test --workspace` 59+10+4+7, clippy clean. Live check: `version.txt`
+  = 1.09, changelog v1.09 head, all three URLs 200 with byte counts and md5
+  matching the built artifacts. Also fixed the product page heading, still
+  reading "Get Catalog v1.07" after the 1.08 pass.
+- **Notarization gotcha (bit 1.09):** Apple issued a new **Apple Developer
+  Program License Agreement on 2026-10-29**; 1.08 still notarized on 11-02
+  (grace window), then the notary service began returning `403 A required
+  agreement is missing or has expired` — including for `notarytool history`,
+  which makes no submission. That is an account-level refusal, not a key,
+  signing or bundle fault. Check `developer.apple.com/account` →
+  Membership details → Agreements (shows "Issued/Accepted" dates) and App
+  Store Connect → Business → Agreements (Paid/Free Apps), then retry: the
+  notary gate takes ~5 minutes to see a fresh acceptance. Only the Account
+  Holder can accept.
 - **Catalog 1.08 LIVE 2026-11-02**: EXE 16343425 (`4c3caa4d…`), DMG 41633287
   (`07801da1…`, signed/notarized/stapled, `CFBundleShortVersionString` 1.08),
   TGZ 14047134 (`24982be7…`). Reload ↻ glyph on the toolbar + automatic
