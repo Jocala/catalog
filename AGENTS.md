@@ -111,7 +111,7 @@ below except where a live procedure depends on them.
   Hand") never collapse. `catalog_kobo_resolve` identifies without opening;
   `catalog_kobo_open_path` launches the chosen path. A single `TitleOnly`
   hit is offered (sync stays primary), never auto-opened.
-- **Passwords from Settings at runtime; never baked into builds; never logged.
+- Passwords from Settings at runtime; never baked into builds; never logged.
 - Signing: `qt/packaging/catalog.entitlements` is now an **empty `<dict/>`**
   (was `com.apple.security.cs.disable-library-validation`), shipping with
   1.08. The exemption was unnecessary: re-signed with Developer ID +
