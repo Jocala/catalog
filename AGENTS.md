@@ -13,11 +13,25 @@ below except where a live procedure depends on them.
 ## Product identity
 - **Name:** Jocala Catalog · **ID:** `com.jocala.catalog` (all
   targets; the retired Swift app's ID is unshipped — no conflict).
-- Settings/data: `%APPDATA%/com.jocala.Catalog/` on Windows (one
-  shared-schema file, all shells); platform app-data fallback where
-  `APPDATA` is absent (macOS `~/Library/...`, Linux XDG — see
-  `settings.cpp::settingsPath`). Never hardcode hosts, credentials,
-  or paths.
+- Data lives in **two folders per platform** — never conflate them
+  (`qt/settings.cpp::settingsPath` vs
+  `crates/catalog-core/src/settings.rs::base_dir`):
+  - **Settings + `errors.log`** (Qt shell; `File → Open Data Folder` opens
+    this one): `%APPDATA%\com.jocala.Catalog\` Windows — deliberately the
+    WPF-era path so the Qt installer inherits an existing `settings.json` —
+    `~/Library/Application Support/Jocala Software/Jocala Catalog/` macOS,
+    `~/.local/share/Jocala Software/Jocala Catalog/` Linux (Qt org/app
+    names).
+  - **Engine caches** (`directories::ProjectDirs::from("com","jocala",
+    "Catalog")`, which drops parts per platform): `%APPDATA%\jocala\Catalog\`
+    Windows (qualifier dropped), `~/Library/Application Support/com.jocala.Catalog/`
+    macOS (all three parts), `~/.local/share/catalog/` Linux (org and
+    qualifier dropped, app lowercased). Holds `covers/`, `kobo_index.txt`,
+    `smb-metadata.db` + `.stamp`, `local-metadata.*`, `Books/`.
+  - Unifying them (one `com.jocala.Catalog` per platform + a settings
+    migration) is planned, not a drive-by: both sides must read one helper,
+    and an upgrade must never lose `settings.json`.
+- Never hardcode hosts, credentials, or paths.
 - Credentials come from Settings at runtime only; passwords are masked everywhere.
   (No passwords in this repo, ever — including test/hardware ones.)
 
@@ -222,7 +236,10 @@ Staging (debian, git-tracked, NO prod push), after builds: per
 sftp is text-only, never binaries): `scp` installer(s) to
 `/zstore/source/www/jocala.com/catalog/`; update links + size
 labels; commit the working tree (message carries byte sizes);
-verify download URL(s) 200 with exact byte sizes.
+verify on the debian test vhost —
+`http://192.168.1.39/www/jocala.com/catalog/` (debian serves
+`/zstore/source/www` at `/www`) — then verify download URL(s) 200
+with exact byte sizes.
 
 Go-live (trigger phrase: "go live", separate step after staging):
 per-product rsync from debian

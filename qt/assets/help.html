@@ -224,15 +224,22 @@ author, series, tags, publisher, ISBN, and description.</p>
 
 <h2>9. Your data &amp; passwords</h2>
 <ul>
-  <li>Settings and caches live in
-      <code>~/Library/Application Support/com.jocala.Catalog/</code>
-      Mac,
-      <code>%APPDATA%\com.jocala.Catalog\</code>
-      Windows, or
-      <code>~/.local/share/Jocala Software/Jocala Catalog/</code>
-      Linux (book covers and thumbnails are
-      cached in subfolders there). <b>File → Open Data Folder</b> opens it.</li>
-  <li>Passwords are kept in <code>settings.json</code> in that folder on all
+  <li>Catalog uses two folders. <b>File → Open Data Folder</b> opens the first.
+      <ul>
+        <li><b>Settings and logs</b> — <code>settings.json</code> and
+            <code>errors.log</code>:
+            <code>%APPDATA%\com.jocala.Catalog\</code> Windows,
+            <code>~/Library/Application Support/Jocala Software/Jocala Catalog/</code>
+            Mac,
+            <code>~/.local/share/Jocala Software/Jocala Catalog/</code> Linux.</li>
+        <li><b>Cache</b> — book covers, thumbnails, the Kobo path index and the
+            local copy of the library database:
+            <code>%APPDATA%\jocala\Catalog\</code> Windows,
+            <code>~/Library/Application Support/com.jocala.Catalog/</code> Mac,
+            <code>~/.local/share/catalog/</code> Linux. Safe to delete; it
+            rebuilds on the next load.</li>
+      </ul></li>
+  <li>Passwords are kept in <code>settings.json</code> (the first folder) on all
       platforms (deliberately outside the OS keychain, so there is never a
       keychain prompt). Passwords are masked everywhere except the momentary
       Show buttons, and are never displayed in full.</li>
