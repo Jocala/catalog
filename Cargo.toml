@@ -1,10 +1,9 @@
 [workspace]
-# Qt direction (2026-09-22): the workspace is the engine (core + FFI)
-# plus the CLI acceptance harness. egui/gtk/macos shells were archived
-# to source/backups/catalog-frozen-crates-* (re-add to members to build).
+# Qt direction (2026-09-22): the workspace is the engine (core + FFI).
+# egui/gtk/macos shells were archived to source/backups/catalog-frozen-crates-*
+# (re-add to members to build).
 members = [
     "crates/catalog-core",
-    "crates/catalog-cli",
     "crates/catalog-ffi",
 ]
 resolver = "2"
@@ -22,7 +21,6 @@ sha2 = "0.10"
 image = "0.25"
 tokio = { version = "1", features = ["full"] }
 directories = "6"
-clap = { version = "4", features = ["derive"] }
 # Default features include async(tokio) + sign + encrypt + compress — all
 # needed against modern Samba (signing often mandatory).
 smb = "0.11"

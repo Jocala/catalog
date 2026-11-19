@@ -41,6 +41,10 @@ private slots:
     void onDbError(const QString &message);
     void showDbError(const QString &message);
     void onKoboOutcome(const QJsonObject &outcome);
+    // Identify-then-ask: the engine returns ranked, deduped candidates and
+    // the window picks between auto-open, a tie-break, and the
+    // different-author offer. No candidate list is ever a dead end.
+    void onKoboResolved(const QJsonObject &resolution);
     void onHandoffOffer(const QString &ip);
     void onDetailReady(const DetailItem &detail);
     void onHelp();
@@ -65,6 +69,11 @@ private:
     QString currentView() const;
     void openDetail(int row);
     void openKoboFor(const BookItem &book);
+    // Same title, another author on the device: sync stays primary, but the
+    // other book is offered by name instead of being hidden.
+    void offerDifferentAuthor(const QList<QJsonObject> &picks);
+    // Genuine tie (same identity, two files) or "Choose…": pick one path.
+    void showCandidateChooser(const QList<QJsonObject> &picks);
 
     CatalogStore m_store;
     UpdateChecker m_updater;

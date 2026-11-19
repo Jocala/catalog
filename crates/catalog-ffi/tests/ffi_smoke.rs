@@ -147,22 +147,17 @@ fn ffi_cover_miss_is_empty_not_crash() {
 }
 
 #[test]
-fn ffi_kobo_math() {
-    let title = CString::new("Emma").unwrap();
-    let sort = CString::new("Austen, Jane").unwrap();
+fn ffi_kobo_open_path_validates_before_touching_ssh() {
+    // Both guards fire before any socket: a bad config must never reach the
+    // transport (which is where an empty ip would otherwise surface as a
+    // confusing auth/sleep message).
     let empty = CString::new("").unwrap();
-    let p = ok_of(&take_str(catalog_kobo_predict(
-        title.as_ptr(),
-        sort.as_ptr(),
-        empty.as_ptr(),
-    )));
-    assert!(p["path"].as_str().unwrap().ends_with(".kepub.epub"));
+    let r: serde_json::Value = serde_json::from_str(&take_str(catalog_kobo_open_path(empty.as_ptr())))
+        .expect("json");
+    assert!(r.get("error").is_some(), "expected an error, got {r}");
 
-    let cands = CString::new(r#"["/mnt/onboard/Austen, Jane/Emma - Jane Austen.kepub.epub"]"#).unwrap();
-    let m = ok_of(&take_str(catalog_kobo_match(
-        cands.as_ptr(),
-        title.as_ptr(),
-        CString::new("Jane Austen").unwrap().as_ptr(),
-    )));
-    assert_eq!(m["strict"].as_array().unwrap().len(), 1);
+    let no_path = CString::new(r#"{"ip":"127.0.0.1"}"#).unwrap();
+    let r: serde_json::Value =
+        serde_json::from_str(&take_str(catalog_kobo_open_path(no_path.as_ptr()))).expect("json");
+    assert!(r.get("error").is_some(), "expected an error, got {r}");
 }

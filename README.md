@@ -36,8 +36,7 @@ More at [jocala.com/catalog](https://www.jocala.com/catalog/) ·
 ## Build from source
 
 One tree, three targets. Qt Widgets shell (`qt/`) over the Rust engine
-(`crates/catalog-core` + `crates/catalog-ffi`); `crates/catalog-cli` is a
-headless acceptance harness.
+(`crates/catalog-core` + `crates/catalog-ffi`).
 
 - **Windows** (static Qt 6.11.1): mirror `qt` + `crates/` + `Cargo.toml`/`Cargo.lock`,
   run `qt/build-catalog-windows.ps1`, then `qt/package-catalog-windows.ps1`.

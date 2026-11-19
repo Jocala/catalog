@@ -5,10 +5,15 @@
 #include <QString>
 
 struct KoboJob {
-    // {"status","message","path","predicted","size_bytes","code","output"}
-    static QJsonObject open(const AppSettings &s, const QString &ip,
-                            const QString &title, const QString &author,
-                            qint64 bookId);
+    // Identify the book on the device; never opens anything.
+    // {"status":"found","auto","author_matched","candidates":[{path,title,author,tier}]}
+    // | {"status":"missing",...} | {"status":"failed",...}
+    static QJsonObject resolve(const AppSettings &s, const QString &ip,
+                               const QString &title, const QString &author,
+                               qint64 bookId);
+    // Open an explicit device path (validate + KOReader launch).
+    static QJsonObject openPath(const AppSettings &s, const QString &ip,
+                                const QString &path);
     static QJsonObject sync(const AppSettings &s, const QString &ip, qint64 bookId);
     // Sync progress readout: {"done","total"} decoded bytes (0,0 = fetching).
     static QJsonObject progress();

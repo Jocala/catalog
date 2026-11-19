@@ -43,6 +43,10 @@ signals:
     void loadingChanged(bool loading);
     void dbError(const QString &message);
     void koboOutcome(const QJsonObject &outcome);
+    // Identification result of "Read on Kobo": the resolution JSON from the
+    // engine (found + candidates / missing + sync size / failed). The window
+    // decides whether to open, ask, or offer a sync.
+    void koboResolved(const QJsonObject &resolution);
     void searchDone(int bookCount, int seriesCount);
     // Sync progress: title + decoded bytes landed/total ((0,0) = fetching,
     // bar runs busy). Polled off catalog_kobo_progress while a sync runs.
@@ -68,6 +72,8 @@ public slots:
     void runSearch(const QJsonObject &params);
     void requestDetail(qint64 id);
     void openOnKobo(qint64 id, const QString &title, const QString &author);
+    // Open a path the user has already chosen (device listing only).
+    void openKoboPath(const QString &path);
     void syncOnKobo(qint64 id, const QString &title);
     // Answer to handoffOffer: install the fix, then open; otherwise just open.
     void answerHandoff(bool install);
@@ -193,6 +199,9 @@ private:
     bool m_handoffBusy = false;
     void proceedOpenKobo(qint64 id, const QString &title, const QString &author,
                          const QString &ip);
+    // Book being opened: the resolve call and the later path-open are
+    // separate round trips, so the title has to outlive the first one.
+    QString m_koboOpenTitle;
     void markHandoffPromptDone();
     // Sync progress poll: 500ms reads of the lock-free FFI counter while
     // a sync worker runs. Stopped in the finish handler; the guard makes

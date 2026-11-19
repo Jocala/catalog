@@ -33,11 +33,8 @@ char *catalog_last_diag(void);
 CatalogBytes catalog_cover(const char *config_json, const char *book_path,
                            unsigned max_w, unsigned max_h);
 
-char *catalog_kobo_predict(const char *title, const char *author_sort,
-                           const char *authors_natural);
-char *catalog_kobo_match(const char *candidates_json, const char *title,
-                         const char *author);
-char *catalog_kobo_open(const char *config_json);
+char *catalog_kobo_resolve(const char *config_json);
+char *catalog_kobo_open_path(const char *config_json);
 char *catalog_kobo_sync(const char *config_json);
 // Sync progress readout: {"ok":{"done":N,"total":M}} decoded bytes.
 // (0,0) while fetching (no total yet); cheap atomic read, safe to poll.

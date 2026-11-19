@@ -283,23 +283,53 @@ void CatalogStore::onHandoffEnsured() {
 
 void CatalogStore::proceedOpenKobo(qint64 id, const QString &title, const QString &author,
                                    const QString &ip) {
-    emit statusChanged(QString("Opening “%1” on Kobo…").arg(title), true, false);
+    // Phase 1: identify. Nothing is launched and nothing is asked here — the
+    // window owns the dialogs, so the FFI call can stay on a worker thread.
+    m_koboOpenTitle = title;
+    emit statusChanged(QString("Looking for “%1” on Kobo…").arg(title), true, false);
     AppSettings s = m_settings;
     QFuture<QJsonObject> f = QtConcurrent::run([s, ip, title, author, id]() {
-        return KoboJob::open(s, ip, title, author, id);
+        return KoboJob::resolve(s, ip, title, author, id);
+    });
+    QFutureWatcher<QJsonObject> *w = new QFutureWatcher<QJsonObject>(this);
+    connect(w, &QFutureWatcher<QJsonObject>::finished, this, [this, w]() {
+        QJsonObject o = w->result();
+        w->deleteLater();
+        const QString status = o.value("status").toString();
+        if (status == "missing")
+            emit statusChanged(QString("Not on Kobo: %1").arg(m_koboOpenTitle), true, false);
+        else if (status == "failed")
+            emit statusChanged(
+                QString("Kobo failed: %1").arg(o.value("message").toString().left(160)), true,
+                false);
+        emit koboResolved(o);
+    });
+    w->setFuture(f);
+}
+
+void CatalogStore::openKoboPath(const QString &path) {
+    // Phase 2: the choice is made, launch KOReader on that exact file.
+    QString ip = resolveKoboIp();
+    if (ip.isEmpty()) {
+        emit statusChanged("Kobo IP not set — enter it in Settings → Kobo", true, false);
+        return;
+    }
+    QString title = m_koboOpenTitle;
+    emit statusChanged(QString("Opening “%1” on Kobo…").arg(title), true, false);
+    AppSettings s = m_settings;
+    QFuture<QJsonObject> f = QtConcurrent::run([s, ip, path]() {
+        return KoboJob::openPath(s, ip, path);
     });
     QFutureWatcher<QJsonObject> *w = new QFutureWatcher<QJsonObject>(this);
     connect(w, &QFutureWatcher<QJsonObject>::finished, this, [this, w, title]() {
         QJsonObject o = w->result();
         w->deleteLater();
-        QString status = o.value("status").toString();
-        if (status == "opened") {
+        if (o.value("status").toString() == "opened")
             emit statusChanged(QString("Opened on Kobo: %1").arg(title), true, true);
-        } else if (status == "missing" || status == "ambiguous") {
-            emit statusChanged(QString("Not on Kobo: %1").arg(title), true, false);
-        } else {
-            emit statusChanged(QString("Kobo failed: %1").arg(o.value("message").toString().left(160)), true, false);
-        }
+        else
+            emit statusChanged(
+                QString("Kobo failed: %1").arg(o.value("message").toString().left(160)), true,
+                false);
         emit koboOutcome(o);
     });
     w->setFuture(f);

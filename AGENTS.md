@@ -2,8 +2,8 @@
 
 Qt direction (2026-09-22): the product is the Qt Widgets app in
 `qt/` over the Rust engine (`crates/catalog-core` +
-`crates/catalog-ffi`; `crates/catalog-cli` acceptance harness). One
-tree builds all three targets: win10 (static Qt 6.11.1), debian
+`crates/catalog-ffi`; the engine's own `cargo test` suite is the
+acceptance harness). One tree builds all three targets: win10 (static Qt 6.11.1), debian
 (system Qt 6.8.2), macOS (static Qt 6.11.1, universal app).
 Prior shells (SwiftUI, WPF, WinUI Phase 1) + frozen Rust shells
 (egui/gtk/macos) are archived in `/Users/jeff/source/backups/`
@@ -44,7 +44,6 @@ below except where a live procedure depends on them.
   `packaging/catalog.iss.in` (single-exe Inno installer).
 - `crates/catalog-core/` — GUI-free Rust business logic (the only thing UI crates may depend on); `tests/fixtures/` holds the 4-book `metadata.db` + `make-fixture.sql`
 - `crates/catalog-ffi/` — C ABI over core (staticlib for the Qt shells, JSON in/out, blocking fns, tokio inside); 6 smoke tests vs fixture
-- `crates/catalog-cli/` — acceptance harness: `library open|list|detail|stale`, `import-zip` (zip-slip safe), `smb ls|get`, `cover`, `kobo`, `settings` probes (CLI prints `(set)`/`(empty)`, never values)
 - Build trees live outside the repo (win10/debian `~/build-catalog`, Mac `source/builds/catalog`) + cargo `target/` (regenerable).
 
 ## Conventions
@@ -96,9 +95,10 @@ below except where a live procedure depends on them.
   listing, no data read), throttled to 30s and skipped while loading. A
   changed stamp triggers `reloadView(true)`, which re-runs the current
   root/drill/search view instead of resetting to root. Probe failures are
-  silent by design. Local sources read direct and are never stale. Verify
-  headlessly: `cargo run -p catalog-cli -- library stale smb://host/share/dir
-  --user U --password P [--refresh]` prints `stale=0|1 current=… recorded=…`.
+  silent by design. Local sources read direct and are never stale. The
+  stamp logic is covered by unit tests in `db.rs`
+  (`stamp_stale_only_when_identity_changes`, `local_source_is_never_stale`);
+  a live-share check is a GUI spot check (open a window, watch it reload).
 - Passwords from Settings at runtime; never baked into builds; never logged.
 - Signing: `qt/packaging/catalog.entitlements` is now an **empty `<dict/>`**
   (was `com.apple.security.cs.disable-library-validation`), shipping with

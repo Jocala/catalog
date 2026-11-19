@@ -768,46 +768,9 @@ pub extern "C" fn catalog_cover(
 }
 
 // ---------------------------------------------------------------------------
-// Kobo: byte-exact path math over plain strings (no I/O here — the shell
-// owns SSH, same split as every other port).
+// Kobo: open orchestration. Resolve identifies a book on the device without
+// opening anything; the shell decides, then asks for the path to be opened.
 // ---------------------------------------------------------------------------
-
-/// Calibre-predicted Kobo path for title + author_sort (+ optional natural).
-#[no_mangle]
-pub extern "C" fn catalog_kobo_predict(
-    title: *const c_char,
-    author_sort: *const c_char,
-    authors_natural: *const c_char,
-) -> *mut c_char {
-    run(|| {
-        let title = c_str(title)?;
-        let sort = c_str(author_sort)?;
-        let natural = c_str(authors_natural).ok().filter(|s| !s.is_empty());
-        Ok(serde_json::json!({
-            "path": kobo::predicted_path(&title, &sort, natural.as_deref())
-        }))
-    })
-}
-
-/// Strict title+author match over a JSON array of candidate paths.
-/// `{"ok":{"strict":[...],"title_only":[...]}}` — shell fails closed on
-/// 0 or >1 combined, exactly like the Swift/C# ports.
-#[no_mangle]
-pub extern "C" fn catalog_kobo_match(
-    candidates_json: *const c_char,
-    title: *const c_char,
-    author: *const c_char,
-) -> *mut c_char {
-    run(|| {
-        let craw = c_str(candidates_json)?;
-        let title = c_str(title)?;
-        let author = c_str(author)?;
-        let cands: Vec<String> =
-            serde_json::from_str(&craw).map_err(|e| format!("bad candidates json: {e}"))?;
-        let (strict, title_only) = kobo::strict_match(&cands, &title, &author);
-        Ok(serde_json::json!({"strict": strict, "title_only": title_only}))
-    })
-}
 
 /// russh shell-exec: config `{"ip","cmd","timeout_secs",
 /// "password","key_file"}`. Auth walks the explicit file, the password,
@@ -842,16 +805,33 @@ pub extern "C" fn catalog_kobo_ssh(config_json: *const c_char) -> *mut c_char {
     })
 }
 
-/// Kobo open orchestration (probe → predict → find → match → open).
-/// Config: `{"ip","password","key_file","title","author","book_id",
-/// "timeout_secs"}` plus the library `file_source` shape when Sync & Open
-/// size consent matters (`book_id` fetches the EPUB size for `Missing`).
-/// Auth resolves like `ssh` itself (explicit file, password, ssh_config,
-/// agent, default identities). Returns the outcome object:
-/// `{"status":"opened"|"missing"|"ambiguous"|"failed", ...}` — shells map
-/// statuses to dialogs exactly like the Swift/C# ports.
+/// Kobo auth resolution shared by resolve/open_path: explicit password, then
+/// an explicit key file, then the conventional identity (like `ssh` itself).
+fn kobo_auth(v: &serde_json::Value) -> kobo::ssh::SshAuth {
+    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let pw = s("password");
+    let kf = s("key_file");
+    if !pw.is_empty() {
+        kobo::ssh::SshAuth::Password(pw)
+    } else if !kf.is_empty() {
+        kobo::ssh::SshAuth::KeyFile(kf.into())
+    } else {
+        kobo::ssh::SshAuth::KeyFile(kobo::ssh::default_key_file())
+    }
+}
+
+/// Identify a book on the Kobo — probes, checks the calibre-predicted path,
+/// then classifies the device index by identity (title + author, kepub over
+/// epub twin). Opens nothing. Config: `{"ip","password","key_file","title",
+/// "author","book_id"}` plus the library `file_source` shape; `book_id` only
+/// matters for the `missing` size consent.
+///
+/// `{"status":"found","auto":path|null,"author_matched":bool,
+///   "candidate_count":N,"candidates":[{"path","title","author","tier"}]}`
+/// `{"status":"missing","message","predicted","size_bytes","candidate_count"}`
+/// `{"status":"failed","message","code"}`
 #[no_mangle]
-pub extern "C" fn catalog_kobo_open(config_json: *const c_char) -> *mut c_char {
+pub extern "C" fn catalog_kobo_resolve(config_json: *const c_char) -> *mut c_char {
     run(|| {
         let raw = c_str(config_json)?;
         let v: serde_json::Value =
@@ -861,31 +841,19 @@ pub extern "C" fn catalog_kobo_open(config_json: *const c_char) -> *mut c_char {
         if ip.trim().is_empty() {
             return Err("missing ip".to_string());
         }
-        let pw = s("password");
-        let kf = s("key_file");
-        let auth = if !pw.is_empty() {
-            kobo::ssh::SshAuth::Password(pw)
-        } else if !kf.is_empty() {
-            kobo::ssh::SshAuth::KeyFile(kf.into())
-        } else {
-            kobo::ssh::SshAuth::KeyFile(kobo::ssh::default_key_file())
-        };
+        let auth = kobo_auth(&v);
         // Library is optional: only needed for Missing.size_bytes consent.
-        let library: Option<(FileSource, i64)> = file_source(&v)
-            .ok()
-            .zip(v.get("book_id").and_then(|x| x.as_i64()));
-        // `library` borrows `v` via src? No — FileSource owns; unwrap the pair.
+        let library: Option<(FileSource, i64)> =
+            file_source(&v).ok().zip(v.get("book_id").and_then(|x| x.as_i64()));
         let out = match library {
-            Some((src, id)) => {
-                runtime().block_on(kobo::open::open_on_kobo(
-                    &ip,
-                    &s("title"),
-                    &s("author"),
-                    auth,
-                    Some((&src, id)),
-                ))
-            }
-            None => runtime().block_on(kobo::open::open_on_kobo(
+            Some((src, id)) => runtime().block_on(kobo::open::resolve_on_kobo(
+                &ip,
+                &s("title"),
+                &s("author"),
+                auth,
+                Some((&src, id)),
+            )),
+            None => runtime().block_on(kobo::open::resolve_on_kobo(
                 &ip,
                 &s("title"),
                 &s("author"),
@@ -893,6 +861,30 @@ pub extern "C" fn catalog_kobo_open(config_json: *const c_char) -> *mut c_char {
                 None,
             )),
         };
+        Ok(out.to_json())
+    })
+}
+
+/// Open an explicit device path in KOReader (the shell has already chosen it,
+/// and it always came from the device's own listing). Config:
+/// `{"ip","path","password","key_file"}`. Returns
+/// `{"status":"opened","path","output"}` or `{"status":"failed","message","code"}`.
+#[no_mangle]
+pub extern "C" fn catalog_kobo_open_path(config_json: *const c_char) -> *mut c_char {
+    run(|| {
+        let raw = c_str(config_json)?;
+        let v: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("bad config json: {e}"))?;
+        let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let ip = s("ip");
+        let path = s("path");
+        if ip.trim().is_empty() {
+            return Err("missing ip".to_string());
+        }
+        if path.trim().is_empty() {
+            return Err("missing path".to_string());
+        }
+        let out = runtime().block_on(kobo::open::open_path_on_kobo(&ip, &path, kobo_auth(&v)));
         Ok(out.to_json())
     })
 }

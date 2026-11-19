@@ -287,8 +287,8 @@ pub fn cache_dir_for(path: &Path) -> PathBuf {
 
 /// Import a zip archive into a library folder: extracts entries (zip-slip
 /// safe via `enclosed_name`) under `<to_dir>/<stem>/`, returns placed
-/// file paths. Used by `catalog-cli import-zip` and, later, the native
-/// file-dialog import flows. Never touches metadata.db (read-only rule).
+/// file paths. For the native file-dialog import flows. Never touches
+/// metadata.db (read-only rule).
 pub fn import_zip(zip_path: &Path, to_dir: &Path) -> Result<Vec<PathBuf>, crate::CoreError> {
     let file = std::fs::File::open(zip_path)?;
     let mut zip = zip::ZipArchive::new(file)?;

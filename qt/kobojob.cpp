@@ -20,9 +20,9 @@ static QJsonObject outcomeOf(char *raw) {
     return out;
 }
 
-QJsonObject KoboJob::open(const AppSettings &s, const QString &ip,
-                          const QString &title, const QString &author,
-                          qint64 bookId) {
+QJsonObject KoboJob::resolve(const AppSettings &s, const QString &ip,
+                             const QString &title, const QString &author,
+                             qint64 bookId) {
     QJsonObject cfg;
     cfg.insert("ip", ip);
     cfg.insert("password", s.koboPassword(ip));
@@ -33,7 +33,17 @@ QJsonObject KoboJob::open(const AppSettings &s, const QString &ip,
     for (auto it = lib.begin(); it != lib.end(); ++it)
         cfg.insert(it.key(), it.value());
     QByteArray raw = QJsonDocument(cfg).toJson(QJsonDocument::Compact);
-    return outcomeOf(catalog_kobo_open(raw.constData()));
+    return outcomeOf(catalog_kobo_resolve(raw.constData()));
+}
+
+QJsonObject KoboJob::openPath(const AppSettings &s, const QString &ip,
+                              const QString &path) {
+    QJsonObject cfg;
+    cfg.insert("ip", ip);
+    cfg.insert("password", s.koboPassword(ip));
+    cfg.insert("path", path);
+    QByteArray raw = QJsonDocument(cfg).toJson(QJsonDocument::Compact);
+    return outcomeOf(catalog_kobo_open_path(raw.constData()));
 }
 
 QJsonObject KoboJob::sync(const AppSettings &s, const QString &ip, qint64 bookId) {

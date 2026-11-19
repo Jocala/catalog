@@ -17,6 +17,8 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QInputDialog>
+#include <QJsonArray>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -260,6 +262,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(&m_store, &CatalogStore::loadingChanged, this, &MainWindow::onLoading);
     connect(&m_store, &CatalogStore::dbError, this, &MainWindow::onDbError);
     connect(&m_store, &CatalogStore::koboOutcome, this, &MainWindow::onKoboOutcome);
+    connect(&m_store, &CatalogStore::koboResolved, this, &MainWindow::onKoboResolved);
     connect(&m_store, &CatalogStore::handoffOffer, this, &MainWindow::onHandoffOffer);
     connect(&m_store, &CatalogStore::detailReady, this, &MainWindow::onDetailReady);
 
@@ -496,6 +499,9 @@ void MainWindow::onDetailReady(const DetailItem &detail) {
 }
 
 void MainWindow::openKoboFor(const BookItem &book) {
+    // The sync offer that may follow needs the book, and the context menu
+    // reaches here without opening the detail dialog first.
+    m_pendingBook = book;
     m_store.openOnKobo(book.id, book.title, book.author);
 }
 
@@ -593,9 +599,41 @@ void MainWindow::onHandoffOffer(const QString &ip) {
         box.buttonRole(box.clickedButton()) == QMessageBox::AcceptRole);
 }
 
-void MainWindow::onKoboOutcome(const QJsonObject &o) {    QString status = o.value("status").toString();
+namespace {
+
+// Button/list label for one device candidate. The author is never omitted:
+// in the different-author case it is the entire point of the offer.
+QString candidateLabel(const QJsonObject &c) {
+    const QString title = c.value("title").toString();
+    const QString author = c.value("author").toString();
+    return author.isEmpty() ? title : QString("%1 — %2").arg(title, author);
+}
+
+// Read on Kobo also runs from the modal detail dialog. A box parented to the
+// window would sit behind that modal loop and never accept input, so parent
+// the offer to whatever is modal right now.
+QWidget *koboDialogParent(QWidget *fallback) {
+    QWidget *modal = QApplication::activeModalWidget();
+    return modal ? modal : fallback;
+}
+
+} // namespace
+
+void MainWindow::onKoboOutcome(const QJsonObject &o) {
+    const QString status = o.value("status").toString();
     if (status == "opened")
         return;
+    // Resolve failures and sync outcomes only; "missing" is handled by
+    // onKoboResolved, which can still offer a sync.
+    QMessageBox::warning(koboDialogParent(this), "Kobo", o.value("message").toString());
+}
+
+void MainWindow::onKoboResolved(const QJsonObject &o) {
+    const QString status = o.value("status").toString();
+    if (status == "failed") {
+        QMessageBox::warning(koboDialogParent(this), "Kobo", o.value("message").toString());
+        return;
+    }
     if (status == "missing") {
         double size = o.value("size_bytes").toDouble(-1);
         QString sizeText = size >= 0
@@ -604,14 +642,108 @@ void MainWindow::onKoboOutcome(const QJsonObject &o) {    QString status = o.val
                                  : QString("%1 KB").arg(qMax<qint64>(1, (qint64)(size / 1024))))
             : "Sync this book to Kobo via WiFi? (size unknown)";
         QMessageBox::StandardButton r = QMessageBox::question(
-            this, "Not on Kobo",
+            koboDialogParent(this), "Not on Kobo",
             o.value("message").toString() + "\n\n" + sizeText,
             QMessageBox::Ok | QMessageBox::Cancel);
         if (r == QMessageBox::Ok && !m_pendingBook.title.isEmpty())
             m_store.syncOnKobo(m_pendingBook.id, m_pendingBook.title);
         return;
     }
-    QMessageBox::warning(this, "Kobo", o.value("message").toString());
+    if (status != "found")
+        return;
+
+    // One identity won outright — the normal case, and it stays silent.
+    const QString autoPath = o.value("auto").toString();
+    if (!autoPath.isEmpty()) {
+        m_store.openKoboPath(autoPath);
+        return;
+    }
+
+    QList<QJsonObject> picks;
+    for (const QJsonValue &v : o.value("candidates").toArray())
+        picks.append(v.toObject());
+    if (picks.isEmpty())
+        return;
+
+    if (o.value("author_matched").toBool(false))
+        showCandidateChooser(picks); // same author, two files
+    else
+        offerDifferentAuthor(picks); // same title, different book
+}
+
+void MainWindow::showCandidateChooser(const QList<QJsonObject> &picks) {
+    if (picks.size() <= 3) {
+        QMessageBox box(koboDialogParent(this));
+        box.setIcon(QMessageBox::Question);
+        box.setWindowTitle("Several copies on Kobo");
+        box.setText("More than one file on the Kobo matches this book. Open which one?");
+        QList<QAbstractButton *> buttons;
+        for (const QJsonObject &c : picks)
+            buttons.append(
+                box.addButton(QString("Open “%1”").arg(candidateLabel(c)), QMessageBox::ActionRole));
+        box.addButton(QMessageBox::Cancel);
+        box.exec();
+        for (int i = 0; i < buttons.size(); ++i) {
+            if (box.clickedButton() == buttons[i]) {
+                m_store.openKoboPath(picks[i].value("path").toString());
+                return;
+            }
+        }
+        return;
+    }
+    QStringList labels;
+    for (const QJsonObject &c : picks) {
+        const QString dir = c.value("path").toString().section('/', -2);
+        labels << (dir.isEmpty() ? candidateLabel(c)
+                                 : QString("%1  ·  %2").arg(candidateLabel(c), dir));
+    }
+    bool ok = false;
+    const QString pick = QInputDialog::getItem(koboDialogParent(this),
+                                               "Several copies on Kobo", "Open which one?", labels,
+                                               0, false, &ok);
+    const int i = ok ? labels.indexOf(pick) : -1;
+    if (i >= 0)
+        m_store.openKoboPath(picks[i].value("path").toString());
+}
+
+void MainWindow::offerDifferentAuthor(const QList<QJsonObject> &picks) {
+    QMessageBox box(koboDialogParent(this));
+    box.setIcon(QMessageBox::Question);
+    box.setWindowTitle("Not on Kobo");
+    QString intro = QString("“%1” isn't on the Kobo under this author.").arg(m_pendingBook.title);
+    if (!m_pendingBook.author.isEmpty())
+        intro += QString(" Library author: %1.").arg(m_pendingBook.author);
+    if (picks.size() == 1)
+        intro += QString("\n\nThe Kobo has a different book with that title: %1.")
+                     .arg(candidateLabel(picks.first()));
+    else
+        intro += "\n\nDifferent books on the Kobo share that title.";
+    box.setText(intro);
+    box.setInformativeText("Sync the library copy, or open one of those instead?");
+
+    QAbstractButton *sync = box.addButton("Sync this book", QMessageBox::AcceptRole);
+    QList<QAbstractButton *> others;
+    for (int i = 0; i < picks.size() && i < 3; ++i)
+        others.append(box.addButton(QString("Open “%1”").arg(candidateLabel(picks[i])),
+                                    QMessageBox::ActionRole));
+    QAbstractButton *choose =
+        picks.size() > 3 ? box.addButton("Choose…", QMessageBox::ActionRole) : nullptr;
+    box.addButton(QMessageBox::Cancel);
+    box.exec();
+
+    if (box.clickedButton() == sync) {
+        if (!m_pendingBook.title.isEmpty())
+            m_store.syncOnKobo(m_pendingBook.id, m_pendingBook.title);
+        return;
+    }
+    for (int i = 0; i < others.size(); ++i) {
+        if (box.clickedButton() == others[i]) {
+            m_store.openKoboPath(picks[i].value("path").toString());
+            return;
+        }
+    }
+    if (choose && box.clickedButton() == choose)
+        showCandidateChooser(picks);
 }
 
 void MainWindow::onHelp() {
